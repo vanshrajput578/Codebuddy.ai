@@ -189,6 +189,64 @@ function decryptCredential(row, context) {
     decipher.update(Buffer.from(row.ciphertext, "base64")), decipher.final()
   ]).toString("utf8");
 }
+function taskFileContext(userId, taskId, filePath) {
+  return `agent-task-file:${userId}:${taskId}:${filePath}`;
+}
+function encryptTaskFile(userId, taskId, file) {
+  const bytes = Buffer.from(file.contentBase64, "base64");
+  if (bytes.toString("base64") !== file.contentBase64 || bytes.length > 256 * 1024) {
+    throw new Error("Task workspace file content is invalid.");
+  }
+  const encrypted = encryptCredential(file.contentBase64, taskFileContext(userId, taskId, file.path));
+  return { ...encrypted, sizeBytes: bytes.length };
+}
+function decryptTaskFile(row) {
+  const contentBase64 = decryptCredential(row, taskFileContext(row.user_id, row.task_id, row.path));
+  const bytes = Buffer.from(contentBase64, "base64");
+  if (bytes.toString("base64") !== contentBase64 || bytes.length !== Number(row.size_bytes)) {
+    throw new Error("Task workspace file integrity check failed.");
+  }
+  return { path: row.path, contentBase64, sizeBytes: bytes.length };
+}
+async function loadTaskWorkspaceFiles(taskId, userId) {
+  const result = await pool.query(
+    "SELECT task_id,user_id,path,ciphertext,iv,auth_tag,size_bytes FROM agent_task_files WHERE task_id=$1 AND user_id=$2 ORDER BY path",
+    [taskId, userId]
+  );
+  return result.rows.map(decryptTaskFile).map(file => ({ path: file.path, contentBase64: file.contentBase64 }));
+}
+async function saveTaskWorkspaceSnapshot(client, taskId, userId, files, warnings = []) {
+  if (!Array.isArray(files) || files.length > 50) throw new Error("Invalid terminal workspace snapshot.");
+  const seen = new Set();
+  let total = 0;
+  const normalized = files.map(file => {
+    const input = validateAgentToolInput("terminal.run", { command: "save workspace", files: [{ path: file.path, contentBase64: file.contentBase64 }] }).files[0];
+    if (seen.has(input.path)) throw new Error("Terminal workspace contains duplicate paths.");
+    seen.add(input.path);
+    const encrypted = encryptTaskFile(userId, taskId, input);
+    total += encrypted.sizeBytes;
+    if (total > 1_000_000) throw new Error("Terminal workspace exceeds the stored file quota.");
+    return { path: input.path, ...encrypted };
+  });
+  if (!warnings.length) {
+    const paths = normalized.map(file => file.path);
+    await client.query(
+      "DELETE FROM agent_task_files WHERE task_id=$1 AND user_id=$2 AND NOT (path = ANY($3::text[]))",
+      [taskId, userId, paths]
+    );
+  }
+  for (const file of normalized) {
+    await client.query(
+      `INSERT INTO agent_task_files (task_id,user_id,path,ciphertext,iv,auth_tag,size_bytes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (task_id,path) DO UPDATE SET
+         ciphertext=EXCLUDED.ciphertext,iv=EXCLUDED.iv,auth_tag=EXCLUDED.auth_tag,
+         size_bytes=EXCLUDED.size_bytes,updated_at=now()`,
+      [taskId, userId, file.path, file.ciphertext, file.iv, file.authTag, file.sizeBytes]
+    );
+  }
+  return normalized.map(file => ({ path: file.path, size: file.sizeBytes }));
+}
 function providerConfig(provider, modelName) {
   if (!providerNames.includes(provider)) throw new Error("Unsupported provider.");
   const modelValue = typeof modelName === "string" ? modelName.trim() : "";
