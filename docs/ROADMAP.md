@@ -6,18 +6,22 @@ A phase is complete only after its acceptance tests pass.
 - [x] Establish NEXUS AI identity.
 - [x] Document architecture and security boundaries.
 - [x] Create browser-openable web workspace prototype.
-- [x] Add a Gitleaks secret-scanning workflow.\n- [ ] Add automated tests and build checks.
+- [x] Add a Gitleaks secret-scanning workflow.
+- [ ] Add automated tests and build checks.
 - [ ] Select repository license.
 
 ## Phase 1 — Web foundation
 - [ ] Convert prototype into typed React/Next.js app.
 - [ ] Add accessible responsive components.
 - [ ] Implement authentication screens and API contracts.
-- [x] Add a server-side Gemini chat API and health endpoint.\n- [x] Add origin checks, request limits, Helmet headers and per-IP rate limiting.\n- [ ] Add automated API security tests.
+- [x] Add a server-side Gemini chat API and health endpoint.
+- [x] Add origin checks, request limits, Helmet headers and per-IP rate limiting.
+- [ ] Add automated API security tests.
 Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 
 ## Phase 2 — Backend and accounts
-- [ ] Fastify API and PostgreSQL.
+- [ ] Add real user authentication and authorization.
+- [ ] Add PostgreSQL and durable user data.
 - [ ] Prisma schema and migrations.
 - [ ] Registration, login, refresh and logout.
 - [ ] Workspace ownership and authorization tests.
