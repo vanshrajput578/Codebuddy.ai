@@ -25,8 +25,9 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the API: `npm run dev`.
-8. In a separate process/container using the same `DATABASE_URL`, start the agent worker: `npm run worker`.
-9. Open `http://localhost:4000`, register, then open **AI Providers** to add a provider key.
+8. In a separate process/container using the same `DATABASE_URL`, start the agent worker: `npm run worker`. The worker exposes `GET http://127.0.0.1:4001/health` by default; configure `WORKER_HEALTH_HOST` and `WORKER_HEALTH_PORT` only when your deployment health checker needs a different bind address/port. Keep the health port private behind a firewall or private network.
+9. Run the API and worker under a process supervisor (systemd, Docker restart policy, or an equivalent host supervisor). The worker handles `SIGINT`/`SIGTERM`, stops claiming new work and drains its active task before exiting. A hard kill is recovered by lease expiry and a later worker claim.
+10. Open `http://localhost:4000`, register, then open **AI Providers** to add a provider key.
 
 The Express server serves the frontend and API on the same origin. Do not host the frontend separately unless a secure same-origin reverse proxy is deliberately configured.
 
@@ -52,7 +53,8 @@ This repository is not yet production-ready for public multi-user traffic. Befor
 
 ## Current API
 
-- `GET /api/health`: database availability.
+- `GET /api/health`: API/database availability.
+- Worker health: `GET /health` on the separate worker health listener (default `127.0.0.1:4001`), including worker state, active task, claim/heartbeat counters and last error.
 - `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`.
 - `GET /api/conversations`, `GET /api/conversations/:id/messages`, `DELETE /api/conversations/:id`.
 - `GET /api/providers`, `PUT /api/providers/:provider`, `DELETE /api/providers/:provider`.
