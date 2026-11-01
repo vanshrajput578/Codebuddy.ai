@@ -8,7 +8,20 @@ function messagesFor(history, prompt) {
 }
 
 async function* readSse(response, extract, signal) {
-  if (!response.ok) throw new Error(`Provider request failed (HTTP ${response.status}).`);
+  if (!response.ok) {
+    const raw = await response.text().catch(() => "");
+    let detail = "";
+    try {
+      const payload = JSON.parse(raw);
+      detail = payload?.error?.message || payload?.message || payload?.error?.status || payload?.error?.type || "";
+    } catch {}
+    detail = String(detail)
+      .replace(/Bearer\\s+\\S+/gi, "[redacted]")
+      .replace(/(?:sk-or-v1-|sk-ant-|sk-|AIza)[A-Za-z0-9_-]{12,}/g, "[redacted]")
+      .replace(/[\\r\\n\\t]+/g, " ")
+      .slice(0, 240);
+    throw new Error(`Provider request failed (HTTP ${response.status})${detail ? `: ${detail}` : ""}.`);
+  }
   if (!response.body) throw new Error("Provider returned no stream.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
