@@ -825,7 +825,7 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   try {
     const task = await pool.query(
-      "SELECT id,title,prompt,status,plan,current_step,replan_count,result,approved_at,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      "SELECT id,title,prompt,status,plan,current_step,replan_count,result,approved_at,worker_attempts,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
       [req.params.id, req.auth.id]
     );
     if (!task.rowCount) return res.status(404).json({ error: "Task not found." });
