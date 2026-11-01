@@ -22,7 +22,7 @@
 ## Production requirements
 Set `NODE_ENV=production`, use HTTPS, set the exact `APP_ORIGIN`, store secrets in the hosting platform's secret manager, and enable database TLS where required. Configure trusted proxy settings only when the deployment topology is known.
 
-The current code does not yet provide email verification, password reset, per-user AI quotas, conversation persistence, user-managed provider keys or account deletion. Do not treat it as production-ready until those controls and an independent security review are complete.
+The current code does not yet provide email verification, password reset, per-user AI quotas, user-managed provider keys or account deletion. Do not treat it as production-ready until those controls and an independent security review are complete.
 
 ## API contract
 - `GET /api/health`: database availability only.
@@ -30,4 +30,4 @@ The current code does not yet provide email verification, password reset, per-us
 - `POST /api/auth/login`: accepts `{email, password}`; returns user, CSRF token and sets HttpOnly session cookie.
 - `GET /api/auth/me`: returns current user and rotates CSRF token.
 - `POST /api/auth/logout`: requires session cookie and `X-CSRF-Token`.
-- `POST /api/chat`: requires session cookie and `X-CSRF-Token`; provider key remains server-side.
+- `GET /api/conversations`: lists only the signed-in user's conversations.\n- `GET /api/conversations/:id/messages`: returns messages only when the conversation belongs to the signed-in user.\n- `DELETE /api/conversations/:id`: deletes only a conversation owned by the signed-in user and requires CSRF.\n- `POST /api/chat`: requires session cookie and `X-CSRF-Token`; saves user/assistant messages and supplies the latest 12 messages as Gemini context. Provider key remains server-side.
