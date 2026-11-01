@@ -56,8 +56,9 @@ if (!process.env.DATABASE_URL) {
         headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
         body: JSON.stringify({ apiKey, model: "gpt-4.1-mini" })
       });
-      assert.equal(save.status, 200, await save.text().catch(() => ""));
-      const savedBody = await save.json();
+      const saveBodyText = await save.text();
+      assert.equal(save.status, 200, saveBodyText);
+      const savedBody = JSON.parse(saveBodyText);
       assert.equal(savedBody.ok, true);
       assert.equal(JSON.stringify(savedBody).includes(apiKey), false, "save response must not expose key");
 
