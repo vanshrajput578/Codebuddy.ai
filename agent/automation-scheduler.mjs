@@ -45,7 +45,7 @@ export async function processDueAgentSchedules(pool, options = {}) {
         await client.query(
           `UPDATE agent_schedules
            SET next_run_at=CASE WHEN interval_minutes IS NULL THEN next_run_at
-             ELSE $2 + make_interval(mins => interval_minutes) END,
+             ELSE $2::timestamptz + make_interval(mins => interval_minutes) END,
              enabled=CASE WHEN interval_minutes IS NULL THEN FALSE ELSE enabled END,
              updated_at=now()
            WHERE id=$1 AND user_id=$3`,
@@ -82,7 +82,7 @@ export async function processDueAgentSchedules(pool, options = {}) {
         `UPDATE agent_schedules
          SET last_run_at=$2,
              next_run_at=CASE WHEN interval_minutes IS NULL THEN next_run_at
-               ELSE $3 + make_interval(mins => interval_minutes) END,
+               ELSE $3::timestamptz + make_interval(mins => interval_minutes) END,
              enabled=CASE WHEN interval_minutes IS NULL THEN FALSE ELSE enabled END,
              updated_at=now()
          WHERE id=$1 AND user_id=$4`,
@@ -109,7 +109,8 @@ export async function processDueAgentSchedules(pool, options = {}) {
   }
 }
 
-export function startAgentScheduler({ pool, intervalMs = DEFAULT_INTERVAL_MS, batchSize = 10, onError = () => {} }) {
+export function startAgentScheduler({ pool, planTask, intervalMs = DEFAULT_INTERVAL_MS, batchSize = 10, onError = () => {} }) {
+  if (typeof planTask !== "function") throw new Error("A scheduled-task planner is required.");
   if (!Number.isInteger(intervalMs) || intervalMs < 5_000 || intervalMs > 300_000) {
     throw new Error("Scheduler interval must be between 5 and 300 seconds.");
   }
@@ -120,7 +121,7 @@ export function startAgentScheduler({ pool, intervalMs = DEFAULT_INTERVAL_MS, ba
   const poll = () => {
     if (stopped || inFlight) return;
     inFlight = true;
-    currentRun = processDueAgentSchedules(pool, { batchSize })
+    currentRun = processDueAgentSchedules(pool, { batchSize, planTask })
       .catch(error => { onError(error); })
       .finally(() => { inFlight = false; });
   };
