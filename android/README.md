@@ -17,6 +17,8 @@ gradle --no-daemon :app:assembleDebug
 
 The APK is written to app/build/outputs/apk/debug/app-debug.apk.
 
+The Android CI workflow builds this app on pushes to `phase-5/android-voice-input` and on pull requests that touch `android/**`; it uploads the debug APK as `nexus-ai-debug-apk`.
+
 ## Connect
 On first launch, enter the exact public origin used for the backend APP_ORIGIN, e.g. https://nexus.example.com. It must be the origin only (no API path). The Android client sends that value in the HTTP Origin header because the API enforces exact-origin checks for authentication and writes.
 
