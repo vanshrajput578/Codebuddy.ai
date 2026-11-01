@@ -43,6 +43,22 @@ if (!process.env.DATABASE_URL) {
     const second = await register(`nexus-two-${suffix}@example.test`);
 
     try {
+      const login = await fetch(baseUrl + "/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ email: `nexus-one-${suffix}@example.test`, password: "Strong-test-password-123" })
+      });
+      assert.equal(login.status, 200);
+      const loginBody = await login.json();
+      assert.equal(loginBody.user.id, first.user.id);
+      assert.ok(login.headers.get("set-cookie"), "login should issue a session cookie");
+
+      const badLogin = await fetch(baseUrl + "/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ email: `nexus-one-${suffix}@example.test`, password: "wrong-password-123" })
+      });
+      assert.equal(badLogin.status, 401);
       const missingCsrf = await fetch(baseUrl + "/api/providers/openai", {
         method: "PUT",
         headers: { "content-type": "application/json", origin, cookie: first.cookie },
