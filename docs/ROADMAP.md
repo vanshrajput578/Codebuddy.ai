@@ -48,11 +48,11 @@ Acceptance: configured provider returns a real streamed response. Current: crede
 Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, central tool registry, safe math/time tools, memory-write approval gate, task UI, lifecycle controls, restart-to-paused recovery, persisted-result composition and evidence-driven continuation planning are implemented. Continuations are capped at two rounds and eight total steps; newly proposed writes clear the prior approval and pause until the updated plan is approved.
 
 ## Phase 5 — Android
-- [ ] Expo app and shared API client.
-- [ ] Secure authentication storage.
-- [ ] Chat, task monitoring and notifications.
-- [ ] File upload and voice capabilities.
-- [ ] Android build and device tests.
+- [x] Native Kotlin/Jetpack Compose app and shared API client.
+- [x] Encrypted session-cookie storage.
+- [x] Chat, conversation history, provider settings and agent task monitoring/approval/lifecycle controls.
+- [ ] Push notifications, file upload and voice capabilities.
+- [x] Android debug build in CI; [ ] physical-device/emulator interaction tests and signed release build.
 Acceptance: Android and web share account and conversation history.
 
 ## Phase 6 — Computer tools
@@ -85,7 +85,7 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 | 2 — Backend and accounts | Core account/session/conversation APIs implemented. Email verification, password recovery, quotas and account deletion remain absent. | PostgreSQL CI integration covers registration/login, CSRF, provider ownership, conversation ownership, logout and persistence. |
 | 3 — AI providers and chat | Provider vault, selection and Gemini/OpenAI/OpenRouter/Anthropic adapters implemented. Model registry, streaming, usage reporting and provider retries remain incomplete. | CI uses a mocked OpenAI endpoint to verify key decryption, tenant-bound ciphertext, provider routing, chat persistence and bounded context. Real third-party API calls are not verified. |
 | 4 — Agent runtime and memory | Bounded provider-assisted planner, allowlisted tools, approval gate, evidence-driven replanning (maximum two rounds/eight total steps), fresh approval for newly introduced writes, task UI and lifecycle controls. No external shell/browser tools. | PostgreSQL CI verifies initial planning, execution, persisted tool evidence, continuation replacement, approval reset, no write before renewed approval, reapproval, completion, tenant isolation, rejection, pause/resume and restart recovery. |
-| 5 — Android | Initial native Kotlin/Jetpack Compose client implemented on the Phase 5 branch: sign-in/register, encrypted session cookie storage, chat/history, provider settings, agent task creation/plan review/approval and task lifecycle controls. Push notifications, biometric auth, offline mode, Play signing and device QA remain. | Android Gradle CI built the debug APK successfully on commit 83d81b1 and uploaded an artifact. No device/emulator interaction test or signed release APK has been verified. |
+| 5 — Android | Native Kotlin/Jetpack Compose client implemented: sign-in/register, encrypted session-cookie storage, chat/history, provider settings, agent task creation/plan review/approval and lifecycle controls. Push notifications, file/voice features, biometric auth, offline mode, Play signing and device QA remain. | Android Gradle CI passed on current branch head `b351da1` and uploaded a 10.4 MiB debug APK artifact. No device/emulator interaction test or signed release APK has been verified. |
 | 6 — Computer tools | Not implemented. | No isolated browser/terminal worker or sandbox tests exist. |
 | 7 — Multi-agent and automations | Not implemented. | No delegation, scheduler or notification tests exist. |
 | 8 — Production hardening | Partial security baseline only. | CI and secret scanning pass; deployment, backups, monitoring, quotas and independent security review are not verified. |
@@ -112,7 +112,7 @@ GitHub Actions provisions PostgreSQL 16 and runs:
 - Security regression tests for origin enforcement, fail-closed behaviour and frontend delivery.
 - Gitleaks secret scanning.
 
-Latest backend-verified dynamic-replanning code commit: `4430b3ab5d0dbb92a03990d0136aba433855ade5`. Its GitHub Actions backend workflow completed successfully, including syntax checks and the PostgreSQL integration suite. The Gitleaks secret scan also passed. Documentation-only updates followed; Android CI for the current branch head is still being checked. Real third-party provider credentials/endpoints, browser/device visual QA and production deployment have not been tested. Phase 3 streaming/capability registry remains incomplete. Phases 5–7 are not implemented. Phase 8 remains a partial security baseline; deployment, backups, monitoring, quotas and independent security review are outstanding.
+Latest verified branch head: `b351da1ec84e03455a1b5bcca900e1a7a9d912d8`. Backend checks, Android Gradle debug build and Gitleaks secret scan all completed successfully on this commit. The Android workflow uploaded a debug APK artifact. Real third-party provider credentials/endpoints, browser/device visual QA and production deployment have not been tested. Phase 3 streaming/capability registry remains incomplete. Phase 5 Android is partially implemented; Phases 6–7 are not implemented. Phase 8 remains a partial security baseline; deployment, backups, monitoring, quotas and independent security review are outstanding.
 
 
 ## Core Agent increment (2026-11-01)
@@ -122,5 +122,5 @@ Latest backend-verified dynamic-replanning code commit: `4430b3ab5d0dbb92a03990d
 - [x] Add a timezone-aware current-time tool (defaults to Asia/Kolkata).
 - [x] Increase the maximum validated plan length from five to eight steps with an additive database migration.
 - [x] Add unit tests for tool allowlisting, validation, approval metadata, arithmetic safety and time output.
-- [ ] Move execution into a separately supervised durable worker (next reliability increment).
+- [ ] Move execution into a separately supervised durable worker with claims/leases, heartbeat, bounded retries and restart-safe recovery (separate next reliability increment; not part of the Core Agent acceptance scope).
 - [x] Add evidence-driven dynamic replanning with bounded continuation plans and renewed approval for newly proposed writes.
