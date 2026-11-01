@@ -419,6 +419,157 @@ app.post("/api/providers/:provider/test", noStore, sameOriginOnly, dbRequired, r
   }
 });
 
+
+const memoryCategories = new Set(["note", "preference", "project", "personal"]);
+function validUuid(value) {
+  return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
+}
+
+app.get("/api/memory", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id,category,content,created_at,updated_at FROM user_memories WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 100",
+      [req.auth.id]
+    );
+    return res.json({ memories: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load saved memory." });
+  }
+});
+
+app.post("/api/memory", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, authLimiter, async (req, res) => {
+  const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+  const category = req.body?.category || "note";
+  if (!content || content.length > 4000 || !memoryCategories.has(category)) {
+    return res.status(400).json({ error: "Memory must contain 1–4000 characters and use a supported category." });
+  }
+  try {
+    const result = await pool.query(
+      "INSERT INTO user_memories (user_id,category,content) VALUES ($1,$2,$3) RETURNING id,category,content,created_at,updated_at",
+      [req.auth.id, category, content]
+    );
+    return res.status(201).json({ memory: result.rows[0] });
+  } catch {
+    return res.status(503).json({ error: "Could not save memory." });
+  }
+});
+
+app.put("/api/memory/:id", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid memory ID." });
+  const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+  const category = req.body?.category || "note";
+  if (!content || content.length > 4000 || !memoryCategories.has(category)) {
+    return res.status(400).json({ error: "Memory must contain 1–4000 characters and use a supported category." });
+  }
+  try {
+    const result = await pool.query(
+      "UPDATE user_memories SET category=$1,content=$2,updated_at=now() WHERE id=$3 AND user_id=$4 RETURNING id,category,content,created_at,updated_at",
+      [category, content, req.params.id, req.auth.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Memory not found." });
+    return res.json({ memory: result.rows[0] });
+  } catch {
+    return res.status(503).json({ error: "Could not update memory." });
+  }
+});
+
+app.delete("/api/memory/:id", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid memory ID." });
+  try {
+    const result = await pool.query("DELETE FROM user_memories WHERE id=$1 AND user_id=$2 RETURNING id", [req.params.id, req.auth.id]);
+    if (!result.rowCount) return res.status(404).json({ error: "Memory not found." });
+    return res.json({ ok: true });
+  } catch {
+    return res.status(503).json({ error: "Could not delete memory." });
+  }
+});
+
+app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, chatLimiter, async (req, res) => {
+  const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+  const titleInput = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+  if (!prompt || prompt.length > 8000 || titleInput.length > 120) {
+    return res.status(400).json({ error: "Task prompt must contain 1–8000 characters; title is limited to 120." });
+  }
+  const title = titleInput || prompt.replace(/\s+/g, " ").slice(0, 120);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const created = await client.query(
+      "INSERT INTO agent_tasks (user_id,title,prompt,status) VALUES ($1,$2,$3,'queued') RETURNING id,title,prompt,status,plan,created_at,updated_at",
+      [req.auth.id, title, prompt]
+    );
+    await client.query(
+      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.created',$2::jsonb)",
+      [created.rows[0].id, JSON.stringify({ status: "queued" })]
+    );
+    await client.query("COMMIT");
+    return res.status(201).json({ task: created.rows[0] });
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(503).json({ error: "Could not create durable task." });
+  } finally {
+    client.release();
+  }
+});
+
+app.get("/api/agent/tasks", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id,title,status,created_at,updated_at FROM agent_tasks WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 50",
+      [req.auth.id]
+    );
+    return res.json({ tasks: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load tasks." });
+  }
+});
+
+app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  try {
+    const task = await pool.query(
+      "SELECT id,title,prompt,status,plan,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      [req.params.id, req.auth.id]
+    );
+    if (!task.rowCount) return res.status(404).json({ error: "Task not found." });
+    const events = await pool.query(
+      "SELECT event_type,payload,created_at FROM agent_task_events WHERE task_id=$1 ORDER BY created_at ASC",
+      [req.params.id]
+    );
+    return res.json({ task: task.rows[0], events: events.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load task details." });
+  }
+});
+
+app.post("/api/agent/tasks/:id/cancel", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updated = await client.query(
+      "UPDATE agent_tasks SET status='cancelled',updated_at=now() WHERE id=$1 AND user_id=$2 AND status IN ('queued','planning','awaiting_approval','paused') RETURNING id,status",
+      [req.params.id, req.auth.id]
+    );
+    if (!updated.rowCount) {
+      const owned = await client.query("SELECT id FROM agent_tasks WHERE id=$1 AND user_id=$2", [req.params.id, req.auth.id]);
+      await client.query("ROLLBACK");
+      return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task cannot be cancelled in its current state." : "Task not found." });
+    }
+    await client.query(
+      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.cancelled',$2::jsonb)",
+      [req.params.id, JSON.stringify({ status: "cancelled", actor: "user" })]
+    );
+    await client.query("COMMIT");
+    return res.json({ task: updated.rows[0] });
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(503).json({ error: "Could not cancel task." });
+  } finally {
+    client.release();
+  }
+});
+
 app.get("/api/conversations", noStore, dbRequired, requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
