@@ -45,7 +45,7 @@ Acceptance: configured provider returns a real streamed response. Current: crede
 - [x] Central allowlisted tool registry with memory search/save, safe arithmetic and timezone-aware clock tools, plus server-side input validation.
 - [x] Explicit plan approval/rejection, pause/resume/cancel transitions and restart recovery.
 - [x] Add user-scoped persistent memory CRUD API.
-Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, central tool registry, safe math/time tools, memory-write approval gate, task UI, lifecycle controls and restart-to-paused recovery are implemented; external tools and advanced replanning remain out of scope.
+Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, central tool registry, safe math/time tools, memory-write approval gate, task UI, lifecycle controls, restart-to-paused recovery and final result composition from persisted tool outputs are implemented. External tools and dynamic replanning are deferred; any future replan that introduces writes must obtain fresh user approval.
 
 ## Phase 5 — Android
 - [ ] Expo app and shared API client.
@@ -111,7 +111,7 @@ GitHub Actions provisions PostgreSQL 16 and runs:
 - Security regression tests for origin enforcement, fail-closed behaviour and frontend delivery.
 - Gitleaks secret scanning.
 
-Latest backend-verified code commit: `fe56c99f82efb09420f5d7f2e00a1b87beb50245`. Its GitHub Actions backend workflow passed 8 top-level tests with 0 failures and 0 skipped; the PostgreSQL integration suite exercised the Phase 4 agent flows. The secret scan passed. Later commits updated documentation only. Real third-party provider credentials/endpoints, browser/device visual QA and production deployment have not been tested. Phase 3 streaming/capability registry remains incomplete. Phases 5–7 are not implemented. Phase 8 remains a partial security baseline; deployment, backups, monitoring, quotas and independent security review are outstanding.
+Latest backend-verified code commit: `fe56c99f82efb09420f5d7f2e00a1b87beb50245`. Its GitHub Actions backend workflow passed 8 top-level tests with 0 failures and 0 skipped; the PostgreSQL integration suite exercised the agent flows. The secret scan passed. Later commits updated documentation and Core Agent unit coverage. Real third-party provider credentials/endpoints, browser/device visual QA and production deployment have not been tested. Phase 3 streaming/capability registry remains incomplete. Phases 5–7 are not implemented. Phase 8 remains a partial security baseline; deployment, backups, monitoring, quotas and independent security review are outstanding.
 
 
 ## Core Agent increment (2026-11-01)
