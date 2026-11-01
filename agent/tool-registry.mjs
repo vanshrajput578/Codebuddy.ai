@@ -173,3 +173,25 @@ export async function executeAgentTool(client, userId, toolId, rawInput) {
       throw new Error("Unsupported agent tool.");
   }
 }
+
+
+/**
+ * Build a bounded final answer from the approved response text and persisted tool outputs.
+ * Tool output is treated as data, never as executable instructions.
+ */
+export function composeAgentResult(steps) {
+  if (!Array.isArray(steps)) throw new Error("Agent steps must be an array.");
+  const responseStep = [...steps].reverse().find(step =>
+    step?.tool === "response.compose" && step?.status === "completed" && typeof step?.result?.text === "string"
+  );
+  const responseText = (responseStep?.result?.text || "The approved task completed.").trim();
+  const evidence = steps
+    .filter(step => step?.status === "completed" && step?.tool !== "response.compose")
+    .map(step => {
+      let serialized;
+      try { serialized = JSON.stringify(step.result); } catch { serialized = '"[unavailable]"'; }
+      return "- " + String(step.tool || "tool").slice(0, 60) + ": " + String(serialized || "null").slice(0, 700);
+    });
+  const suffix = evidence.length ? "\n\nVerified execution results:\n" + evidence.join("\n") : "";
+  return (responseText + suffix).slice(0, 4000);
+}
