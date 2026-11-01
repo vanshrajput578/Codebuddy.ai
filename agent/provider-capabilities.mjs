@@ -16,8 +16,8 @@ export function listProviderCapabilities() {
 }
 
 export function extractSseData(frame) {
-  const lines = String(frame).split(/\\r?\\n/);
-  const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trim()).join("\\n");
+  const lines = String(frame).split(/\r?\n/);
+  const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trim()).join("\n");
   if (!data || data === "[DONE]") return null;
   try { return JSON.parse(data); } catch { return null; }
 }
