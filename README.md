@@ -9,9 +9,9 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 - Implemented in code: registration/login, scrypt password hashing, opaque session cookies, CSRF checks, user-owned conversations, encrypted provider-key storage, provider selection and four provider adapters (Gemini, OpenAI, OpenRouter, Anthropic).
 - Automated verification: syntax checks, isolated API security tests, PostgreSQL integration tests and Gitleaks secret scanning run in GitHub Actions.
 - Implemented: PostgreSQL-backed task records and event history, provider-assisted planner (maximum eight steps), allowlisted tools, explicit plan approval, pause/resume/reject/cancel controls, persisted tool results, evidence-driven replanning (maximum two rounds), and fresh approval when a continuation introduces a write.
-- Agent execution boundary: API requests only transition tasks into the durable running queue. A separate `npm run worker` process claims PostgreSQL tasks with `FOR UPDATE SKIP LOCKED`, a UUID fencing token, a renewable lease and a bounded three-claim crash-recovery limit. The API does not execute agent steps. The only external computer capability currently exposed is approval-gated, read-only `browser.open`; shell execution, arbitrary HTTP, filesystem access and device control remain unavailable.
+- Agent execution boundary: API requests only transition tasks into the durable running queue. A separate `npm run worker` process claims PostgreSQL tasks with `FOR UPDATE SKIP LOCKED`, a UUID fencing token, a renewable lease and a bounded three-claim crash-recovery limit. The API does not execute agent steps. External computer capabilities are limited to approval-gated `browser.open` (read-only public pages) and `terminal.run` (commands inside a disposable, no-network container with a bounded scratch workspace). No host filesystem access, arbitrary HTTP access or device control is exposed.
 - Implemented on the Phase 5 branch: native Kotlin/Jetpack Compose Android client for authentication, encrypted session-cookie storage, chat/history, provider settings and agent task creation/plan approval/lifecycle controls. Latest Android CI on branch head `b351da1` passed and uploaded a debug APK artifact (10.4 MiB); no signed release APK or physical-device QA is verified.
-- Not implemented: computer-use sandbox, multi-agent delegation and scheduled automations.
+- Not complete: production deployment and network-policy verification for computer tools, persistent workspaces, multi-agent delegation and scheduled automations.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
 
 ## Local setup
@@ -21,7 +21,7 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, and `006_agent_worker_leases.sql` in order.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, and `007_provider_usage.sql` in order.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the API: `npm run dev`.
@@ -98,3 +98,17 @@ See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPL
 ## License
 
 No open-source license has been selected. Normal copyright applies.
+
+## Isolated terminal and file workspace (Phase 6)
+
+The terminal controller is a separate private service. It launches one disposable sandbox container per command; the workspace is scratch storage for that invocation, and files are explicitly passed in and returned as bounded base64 snapshots. It is not persistent storage.
+
+1. Build the sandbox image: `docker build -f computer/terminal-sandbox.Dockerfile -t nexus-terminal-sandbox:latest .`.
+2. Generate an internal token: `openssl rand -hex 32`. Configure `TERMINAL_WORKER_TOKEN`, `TERMINAL_WORKER_HOST` and `TERMINAL_WORKER_PORT` on the controller host.
+3. Start `npm run terminal-worker` on a dedicated sandbox VM/host with Docker CLI and access to its isolated Docker daemon.
+4. Configure `TERMINAL_WORKER_URL` and the same `TERMINAL_WORKER_TOKEN` in the durable agent worker environment, over a private authenticated network.
+5. Keep the Docker daemon/CLI privilege on the dedicated sandbox host only. Access to a Docker daemon is effectively host-administrator access; do not grant the main API/DB host access to the sandbox daemon, and never mount the Docker socket into a task container.
+
+Each terminal job runs as UID 10001 with `--network none`, a read-only root filesystem, all Linux capabilities dropped, no-new-privileges, 256 MiB memory, 0.5 CPU, 64 PIDs, a 64 MiB tmpfs workspace, a 16 MiB temporary directory and a maximum 15-second command timeout. Commands receive no application, database or provider secrets and no host path mounts. The controller limits each user to 10 jobs per minute and allows at most two concurrent sandbox jobs. Each request can carry at most 30 files, 256 KiB per file and 1 MiB total; stdout and stderr are each capped at 32 KiB.
+
+`terminal.run` is approval-required and its plan must request evidence-driven replanning. The server calls the controller outside the PostgreSQL task transaction and revalidates task ownership state/lease before persisting results. A successful CI test of the controller contract does not replace building the Docker image and verifying the dedicated daemon/network isolation in deployment.
