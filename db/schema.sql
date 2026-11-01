@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title VARCHAR(120) NOT NULL,
+  agent_profile VARCHAR(32) NOT NULL DEFAULT 'general' CHECK (agent_profile IN ('general','researcher','developer','reviewer')),
+  allowed_tools JSONB NOT NULL DEFAULT '["memory.search","memory.save","math.calculate","time.now","browser.open","terminal.run","response.compose"]'::jsonb
+    CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 7),
   prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 8000),
   status VARCHAR(24) NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued','planning','awaiting_approval','running','paused','completed','failed','cancelled')),
