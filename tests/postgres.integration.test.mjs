@@ -118,8 +118,9 @@ if (!process.env.DATABASE_URL) {
           headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
           body: JSON.stringify({ message: "Remember this test phrase: blue comet." })
         });
-        assert.equal(firstChat.status, 200, await firstChat.text());
-        const firstChatBody = await firstChat.json();
+        const firstChatText = await firstChat.text();
+        assert.equal(firstChat.status, 200, firstChatText);
+        const firstChatBody = JSON.parse(firstChatText);
         assert.equal(firstChatBody.answer, "NEXUS connection successful");
         chatConversationId = firstChatBody.conversationId;
 
