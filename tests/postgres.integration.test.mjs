@@ -245,6 +245,15 @@ if (!process.env.DATABASE_URL) {
         assert.equal(agentPlanBody.task.plan.steps.length, 3);
         assert.equal(agentPlanBody.task.plan.steps[1].requiresApproval, true, "memory writes must be marked approval-required");
         assert.ok(agentPlanBody.task.plan.steps.every(step => ["memory.search", "memory.save", "response.compose"].includes(step.tool)), "planner must only return allowlisted tools");
+        const beforeApprovalMemory = await pool.query(
+          "SELECT id FROM user_memories WHERE user_id=$1 AND content=$2",
+          [first.user.id, "Approved agent memory artifact."]
+        );
+        assert.equal(beforeApprovalMemory.rowCount, 0, "planned writes must not execute before approval");
+        const resumeWithoutApproval = await originalFetch(baseUrl + `/api/agent/tasks/${agentTaskId}/resume`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(resumeWithoutApproval.status, 409, "resume cannot bypass the approval gate");
 
         const foreignApproval = await originalFetch(baseUrl + `/api/agent/tasks/${agentTaskId}/approve`, {
           method: "POST", headers: { origin, cookie: second.cookie, "x-csrf-token": second.csrf }
@@ -270,6 +279,7 @@ if (!process.env.DATABASE_URL) {
         const completedAgent = await waitForAgentTask(agentTaskId, "completed");
         assert.equal(completedAgent.task.current_step, 3);
         assert.equal(completedAgent.task.result, "Agent finished after approval.");
+        assert.equal(completedAgent.task.plan.steps[0].result.memories.length, 1, "tool outputs must persist in the execution plan");
         assert.ok(completedAgent.events.some(event => event.event_type === "task.approved"));
         assert.equal(completedAgent.events.filter(event => event.event_type === "tool.executed").length, 3);
         const savedAgentMemory = await pool.query(
