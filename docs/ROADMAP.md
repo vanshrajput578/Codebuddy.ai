@@ -40,7 +40,7 @@ Acceptance: users can register and only access their own data.
 Acceptance: configured provider returns a real streamed response. Current: credential storage, selection and adapters are implemented; actual live provider calls and streaming remain unverified/not implemented.
 
 ## Phase 4 — Agent runtime and memory
-- [x] Add PostgreSQL-backed durable task records and execution-event history (queue foundation only).
+- [x] Add PostgreSQL-backed durable task records, execution cursor and event history.
 - [x] Provider-assisted planning with strict JSON validation and a five-step execution bound.
 - [x] Allowlisted memory search/save and response composition tools with server-side input validation.
 - [x] Explicit plan approval/rejection, pause/resume/cancel transitions and restart recovery.
