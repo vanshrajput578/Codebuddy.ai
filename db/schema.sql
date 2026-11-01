@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT agent_tasks_profile_check CHECK (agent_profile IN ('general','researcher','developer','reviewer')),
   CONSTRAINT agent_tasks_allowed_tools_check
-    CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 7)
+    CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 8)
 );
 CREATE INDEX IF NOT EXISTS agent_tasks_user_updated_idx ON agent_tasks(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS agent_tasks_worker_claim_idx ON agent_tasks(status, lease_expires_at, updated_at) WHERE status='running';
@@ -105,7 +105,7 @@ CREATE INDEX IF NOT EXISTS agent_task_events_task_created_idx ON agent_task_even
 
 CREATE UNIQUE INDEX IF NOT EXISTS agent_tasks_id_user_id_uq ON agent_tasks(id, user_id);
 
-DO $
+DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
@@ -116,7 +116,7 @@ BEGIN
       ADD CONSTRAINT agent_tasks_parent_owner_fk
       FOREIGN KEY (parent_task_id,user_id) REFERENCES agent_tasks(id,user_id) ON DELETE CASCADE;
   END IF;
-END $;
+END $$;
 
 CREATE TABLE IF NOT EXISTS agent_delegations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
