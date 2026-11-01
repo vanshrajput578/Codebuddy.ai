@@ -84,7 +84,7 @@ test("stream adapter applies the registry default model when no model is configu
     const chunks = [];
     for await (const chunk of streamProviderResponse("openai", "provider-test-key-123", undefined, "hello")) chunks.push(chunk);
     assert.deepEqual(chunks, ["Default model works"]);
-    assert.equal(captured.body.model, "gpt-4.1-mini");
+    assert.equal(captured.body.model, "gpt-6-luna");
   } finally { globalThis.fetch = originalFetch; }
 });
 
