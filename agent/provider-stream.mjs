@@ -42,7 +42,8 @@ async function* readSse(response, extract, signal) {
 
 export async function* streamProviderResponse(provider, key, model, prompt, history = [], options = {}) {
   const { signal } = options;
-  getProviderCapabilities(provider, model);
+  const capability = getProviderCapabilities(provider, model);
+  model = capability.model;
   let endpoint, headers, body, extract;
   const messages = messagesFor(history, prompt);
   if (provider === "gemini") {
