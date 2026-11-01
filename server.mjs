@@ -4,7 +4,8 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import pg from "pg";
 import {
-  createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual,\n  createCipheriv, createDecipheriv
+  createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual,
+  createCipheriv, createDecipheriv
 } from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
