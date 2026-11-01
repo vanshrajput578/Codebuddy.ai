@@ -76,7 +76,7 @@ test("stream adapter applies the registry default model when no model is configu
   let captured;
   globalThis.fetch = async (url, options) => {
     captured = { url: String(url), body: JSON.parse(options.body) };
-    return new Response('data: {"choices":[{"delta":{"content":"Default model works"}}]}\\n\\ndata: [DONE]\\n\\n', {
+    return new Response('data: {"choices":[{"delta":{"content":"Default model works"}}]}\n\ndata: [DONE]\n\n', {
       status: 200, headers: { "content-type": "text/event-stream" }
     });
   };
