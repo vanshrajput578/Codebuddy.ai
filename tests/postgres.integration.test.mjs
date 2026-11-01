@@ -38,6 +38,7 @@ if (!process.env.DATABASE_URL) {
     const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
     const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
     const taskFilesMigration = await readFile(new URL("../db/migrations/008_agent_task_files.sql", import.meta.url), "utf8");
+    const agentProfileMigration = await readFile(new URL("../db/migrations/009_agent_profiles.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -49,6 +50,8 @@ if (!process.env.DATABASE_URL) {
     await pool.query(workerMigration);
     await pool.query(taskFilesMigration);
     await pool.query(taskFilesMigration);
+    await pool.query(agentProfileMigration);
+    await pool.query(agentProfileMigration);
     let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
@@ -106,13 +109,16 @@ if (!process.env.DATABASE_URL) {
         method: "POST",
         headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
         body: JSON.stringify({
-          title: "Integration task", prompt: "Prepare a safe project plan.",
+          title: "Integration task", prompt: "Prepare a safe project plan.", agentProfile: "developer",
           files: [{ path: "src/index.js", contentBase64: workspaceBase64 }]
         })
       });
       assert.equal(taskCreate.status, 201);
       const taskBody = await taskCreate.json();
       assert.equal(taskBody.task.status, "queued");
+      assert.equal(taskBody.task.agent_profile, "developer");
+      assert.ok(taskBody.task.allowed_tools.includes("terminal.run"));
+      assert.equal(taskBody.task.allowed_tools.includes("browser.open"), false);
       assert.deepEqual(taskBody.workspace, { fileCount: 1, totalBytes: workspaceBytes.length });
       const storedWorkspace = await pool.query(
         "SELECT ciphertext,iv,auth_tag,size_bytes FROM agent_task_files WHERE task_id=$1 AND user_id=$2",
@@ -161,6 +167,18 @@ if (!process.env.DATABASE_URL) {
         body: JSON.stringify({ title: "Invalid upload", prompt: "Reject traversal.", files: [{ path: "../secrets.txt", contentBase64: "eA==" }] })
       });
       assert.equal(invalidWorkspaceUpload.status, 400);
+      const invalidAgentProfile = await fetch(baseUrl + "/api/agent/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ title: "Invalid specialist", prompt: "Reject unknown profile.", agentProfile: "unrestricted" })
+      });
+      assert.equal(invalidAgentProfile.status, 400);
+      const agentProfiles = await fetch(baseUrl + "/api/agents", { headers: { cookie: first.cookie } });
+      const profileBody = await agentProfiles.json();
+      assert.equal(agentProfiles.status, 200);
+      assert.deepEqual(profileBody.agents.map(agent => agent.id), ["general", "researcher", "developer", "reviewer"]);
+      const privateProfiles = await fetch(baseUrl + "/api/agents");
+      assert.equal(privateProfiles.status, 401);
       const taskDetails = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}`, { headers: { cookie: first.cookie } });
       const taskDetailsBody = await taskDetails.json();
       assert.equal(taskDetails.status, 200);
@@ -265,7 +283,12 @@ if (!process.env.DATABASE_URL) {
               { title: "Summarize the updated evidence", description: "Summarize the search result and approved save.", tool: "response.compose", input: { text: "Agent finished after dynamic replanning." } }
             ] });
           } else if (lastMessage.includes("NEXUS_AGENT_PLAN_JSON")) {
-            if (lastMessage.includes("TERMINAL_RUN_VALID_TEST")) {
+            if (lastMessage.includes("RESEARCHER_SCOPE_VIOLATION_TEST")) {
+              content = JSON.stringify({ steps: [
+                { title: "Run a command", description: "Try to run a terminal command outside this profile scope.", tool: "terminal.run", input: { command: "id", files: [] }, replanAfter: true },
+                { title: "Summarize", description: "Return the outcome.", tool: "response.compose", input: { text: "Reviewed." } }
+              ] });
+            } else if (lastMessage.includes("TERMINAL_RUN_VALID_TEST")) {
               content = JSON.stringify({ steps: [
                 { title: "Run isolated command", description: "Run the requested command inside the no-network terminal sandbox.", tool: "terminal.run", input: { command: "printf 'NEXUS_TERMINAL_OK'", files: [] }, replanAfter: true },
                 { title: "Summarize terminal result", description: "Summarize the bounded terminal output.", tool: "response.compose", input: { text: "Terminal command completed." } }
@@ -541,7 +564,7 @@ if (!process.env.DATABASE_URL) {
         const browserCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
           headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
-          body: JSON.stringify({ title: "Inspect public page", prompt: "BROWSER_OPEN_VALID_TEST" })
+          body: JSON.stringify({ title: "Inspect public page", prompt: "BROWSER_OPEN_VALID_TEST", agentProfile: "researcher" })
         });
         const browserId = (await browserCreate.json()).task.id;
         const browserPlan = await originalFetch(baseUrl + `/api/agent/tasks/${browserId}/plan`, {
@@ -549,9 +572,25 @@ if (!process.env.DATABASE_URL) {
         });
         const browserPlanBody = await browserPlan.json();
         assert.equal(browserPlan.status, 200, JSON.stringify(browserPlanBody));
+        assert.equal(browserPlanBody.task.agent_profile, "researcher");
+        assert.equal(browserPlanBody.task.allowed_tools.includes("terminal.run"), false);
         assert.equal(browserPlanBody.task.plan.steps[0].tool, "browser.open");
         assert.equal(browserPlanBody.task.plan.steps[0].requiresApproval, true);
         assert.equal(browserPlanBody.task.plan.steps[0].replanAfter, true);
+
+        const researcherScopeCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Reject out of scope tool", prompt: "RESEARCHER_SCOPE_VIOLATION_TEST", agentProfile: "researcher" })
+        });
+        const researcherScopeId = (await researcherScopeCreate.json()).task.id;
+        const researcherScopePlan = await originalFetch(baseUrl + `/api/agent/tasks/${researcherScopeId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(researcherScopePlan.status, 502, "researcher profile must not gain terminal permissions");
+        const researcherScopeState = await pool.query("SELECT status,agent_profile FROM agent_tasks WHERE id=$1", [researcherScopeId]);
+        assert.equal(researcherScopeState.rows[0].status, "failed");
+        assert.equal(researcherScopeState.rows[0].agent_profile, "researcher");
 
         const browserNoReplanCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
@@ -567,7 +606,7 @@ if (!process.env.DATABASE_URL) {
         const terminalCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
           headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
-          body: JSON.stringify({ title: "Run in terminal sandbox", prompt: "TERMINAL_RUN_VALID_TEST" })
+          body: JSON.stringify({ title: "Run in terminal sandbox", prompt: "TERMINAL_RUN_VALID_TEST", agentProfile: "developer" })
         });
         const terminalId = (await terminalCreate.json()).task.id;
         const terminalPlan = await originalFetch(baseUrl + `/api/agent/tasks/${terminalId}/plan`, {
@@ -576,6 +615,8 @@ if (!process.env.DATABASE_URL) {
         const terminalPlanBody = await terminalPlan.json();
         assert.equal(terminalPlan.status, 200, JSON.stringify(terminalPlanBody));
         assert.equal(terminalPlanBody.task.status, "awaiting_approval");
+        assert.equal(terminalPlanBody.task.agent_profile, "developer");
+        assert.equal(terminalPlanBody.task.allowed_tools.includes("browser.open"), false);
         assert.equal(terminalPlanBody.task.plan.steps[0].tool, "terminal.run");
         assert.equal(terminalPlanBody.task.plan.steps[0].requiresApproval, true);
         assert.equal(terminalPlanBody.task.plan.steps[0].replanAfter, true);
