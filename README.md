@@ -21,7 +21,7 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, and `007_provider_usage.sql` in order.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, and `008_agent_task_files.sql` in order.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the API: `npm run dev`.
@@ -101,7 +101,7 @@ No open-source license has been selected. Normal copyright applies.
 
 ## Isolated terminal and file workspace (Phase 6)
 
-The terminal controller is a separate private service. It launches one disposable sandbox container per command; the workspace is scratch storage for that invocation, and files are explicitly passed in and returned as bounded base64 snapshots. It is not persistent storage.
+The terminal controller is a separate private service. It launches one disposable sandbox container per command. The task's workspace is persistent and private in PostgreSQL; file contents are AES-256-GCM encrypted with per-user/task/path associated data. Each command receives the bounded current file snapshot in a tmpfs workspace, then the controller returns changed files which are encrypted back into the same task workspace.
 
 1. Build the sandbox image: `docker build -f computer/terminal-sandbox.Dockerfile -t nexus-terminal-sandbox:latest .`.
 2. Generate an internal token: `openssl rand -hex 32`. Configure `TERMINAL_WORKER_TOKEN`, `TERMINAL_WORKER_HOST` and `TERMINAL_WORKER_PORT` on the controller host.
