@@ -8,7 +8,8 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 
 - Implemented in code: registration/login, scrypt password hashing, opaque session cookies, CSRF checks, user-owned conversations, encrypted provider-key storage, provider selection and four provider adapters (Gemini, OpenAI, OpenRouter, Anthropic).
 - Automated verification: syntax checks, isolated API security tests, PostgreSQL integration tests and Gitleaks secret scanning run in GitHub Actions.
-- Partially implemented: durable task queue/event records and user-controlled memory CRUD APIs. No agent planner/executor or task UI exists yet.
+- Implemented: durable task queue, provider-assisted bounded planner, allowlisted memory/search/response tools, explicit approval gate, background execution, task history UI, pause/resume/reject/cancel controls and user-scoped memory CRUD.
+- Agent limitation: no shell, browser, arbitrary HTTP, filesystem or device-control tools; no advanced model replanning or distributed worker service.
 - Not implemented: Android client, computer-use sandbox, multi-agent delegation and scheduled automations.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
 
@@ -19,7 +20,7 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing Phase 2/3 database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/003_agent_runtime.sql`.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database with the earlier task queue schema, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/003_agent_runtime.sql`.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the app: `npm run dev`.
@@ -56,7 +57,9 @@ This repository is not yet production-ready for public multi-user traffic. Befor
 - `PUT /api/provider-selection`.
 - `POST /api/providers/:provider/test`.
 - `GET/POST /api/memory`, `PUT/DELETE /api/memory/:id`: user-scoped persistent memory CRUD.
-- `GET/POST /api/agent/tasks`, `GET /api/agent/tasks/:id`, `POST /api/agent/tasks/:id/cancel`: durable task queue and event history (no worker execution yet).
+- `GET/POST /api/agent/tasks`, `GET /api/agent/tasks/:id`: user-scoped task queue and event history.
+- `POST /api/agent/tasks/:id/plan`: generate and validate a plan of at most five allowlisted steps.
+- `POST /api/agent/tasks/:id/approve`, `/reject`, `/pause`, `/resume`, `/cancel`: explicit task lifecycle controls. Execution starts only after approval.
 - `POST /api/chat`: calls the selected provider and persists the conversation.
 
 See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPLEMENTATION.md), [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
