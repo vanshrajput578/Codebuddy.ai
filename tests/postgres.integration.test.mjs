@@ -37,6 +37,7 @@ if (!process.env.DATABASE_URL) {
     const stepLimitMigration = await readFile(new URL("../db/migrations/004_agent_step_limit.sql", import.meta.url), "utf8");
     const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
     const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
+    const taskFilesMigration = await readFile(new URL("../db/migrations/008_agent_task_files.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -46,6 +47,8 @@ if (!process.env.DATABASE_URL) {
     await pool.query(replanningMigration);
     await pool.query(workerMigration);
     await pool.query(workerMigration);
+    await pool.query(taskFilesMigration);
+    await pool.query(taskFilesMigration);
     let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
@@ -97,14 +100,46 @@ if (!process.env.DATABASE_URL) {
       });
       assert.equal(foreignMemoryDelete.status, 404, "users must not delete another user's memory");
 
+      const workspaceBytes = Buffer.from("export const nexus = true;\\n");
+      const workspaceBase64 = workspaceBytes.toString("base64");
       const taskCreate = await fetch(baseUrl + "/api/agent/tasks", {
         method: "POST",
         headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
-        body: JSON.stringify({ title: "Integration task", prompt: "Prepare a safe project plan." })
+        body: JSON.stringify({
+          title: "Integration task", prompt: "Prepare a safe project plan.",
+          files: [{ path: "src/index.js", contentBase64: workspaceBase64 }]
+        })
       });
       assert.equal(taskCreate.status, 201);
       const taskBody = await taskCreate.json();
       assert.equal(taskBody.task.status, "queued");
+      assert.deepEqual(taskBody.workspace, { fileCount: 1, totalBytes: workspaceBytes.length });
+      const storedWorkspace = await pool.query(
+        "SELECT ciphertext,iv,auth_tag,size_bytes FROM agent_task_files WHERE task_id=$1 AND user_id=$2",
+        [taskBody.task.id, first.user.id]
+      );
+      assert.equal(storedWorkspace.rowCount, 1);
+      assert.notEqual(storedWorkspace.rows[0].ciphertext, workspaceBase64, "workspace content must be encrypted at rest");
+      assert.equal(storedWorkspace.rows[0].size_bytes, workspaceBytes.length);
+      const workspaceList = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files`, { headers: { cookie: first.cookie } });
+      const workspaceListBody = await workspaceList.json();
+      assert.equal(workspaceList.status, 200);
+      assert.equal(workspaceListBody.files.length, 1);
+      assert.equal(workspaceListBody.files[0].path, "src/index.js");
+      const workspaceDownload = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files/${workspaceListBody.files[0].id}`, { headers: { cookie: first.cookie } });
+      const workspaceDownloadBody = await workspaceDownload.json();
+      assert.equal(workspaceDownload.status, 200);
+      assert.equal(workspaceDownloadBody.file.contentBase64, workspaceBase64);
+      const foreignWorkspaceList = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files`, { headers: { cookie: second.cookie } });
+      assert.equal(foreignWorkspaceList.status, 404, "workspace files must remain private to the task owner");
+      const foreignWorkspaceDownload = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files/${workspaceListBody.files[0].id}`, { headers: { cookie: second.cookie } });
+      assert.equal(foreignWorkspaceDownload.status, 404);
+      const invalidWorkspaceUpload = await fetch(baseUrl + "/api/agent/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ title: "Invalid upload", prompt: "Reject traversal.", files: [{ path: "../secrets.txt", contentBase64: "eA==" }] })
+      });
+      assert.equal(invalidWorkspaceUpload.status, 400);
       const taskDetails = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}`, { headers: { cookie: first.cookie } });
       const taskDetailsBody = await taskDetails.json();
       assert.equal(taskDetails.status, 200);
