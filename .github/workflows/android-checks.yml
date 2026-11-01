@@ -21,9 +21,13 @@ jobs:
         with:
           gradle-version: "8.13"
       - name: Install Android SDK packages
+        shell: bash
         run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          SDKMANAGER="$(command -v sdkmanager || find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          test -n "$SDKMANAGER"
+          set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
       - name: Build debug APK
         working-directory: android
