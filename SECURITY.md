@@ -15,7 +15,7 @@
 - CSRF validation and exact-origin checks on authenticated state-changing routes.
 - Helmet security headers and a restrictive Content Security Policy.
 - Request-size and message-length limits; per-IP rate limiting.
-- AES-256-GCM encryption for per-user provider credentials.
+- AES-256-GCM encryption for per-user provider credentials, with authenticated additional data binding each ciphertext to its user and provider.
 - Provider metadata responses never return the original API key.
 - Provider requests have bounded timeouts.
 - No request-body or secret logging is intentionally implemented.
