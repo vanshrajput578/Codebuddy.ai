@@ -19,6 +19,12 @@ const accountLabel=document.getElementById('accountLabel');
 const suggestions=document.getElementById('suggestions');
 const chatArea=document.getElementById('chatArea');
 const providerSettings=document.getElementById('providerSettings');
+const tasksView=document.getElementById('tasksView');
+const agentTaskForm=document.getElementById('agentTaskForm');
+const agentTaskError=document.getElementById('agentTaskError');
+const agentTaskList=document.getElementById('agentTaskList');
+const agentTaskDetail=document.getElementById('agentTaskDetail');
+let selectedAgentTaskId=null;
 const providerSelect=document.getElementById('providerSelect');
 const providerModel=document.getElementById('providerModel');
 const providerKey=document.getElementById('providerKey');
@@ -225,7 +231,106 @@ document.getElementById('deleteProvider').addEventListener('click',async()=>{
   }catch(error){providerError.textContent=error.message;}
 });
 
-async function sendMessage(text){
+
+function makeAgentButton(label,action,className='provider-secondary'){
+  const button=document.createElement('button');
+  button.type='button';button.className=className;button.textContent=label;
+  button.addEventListener('click',action);return button;
+}
+async function loadAgentTasks(){
+  if(!currentUser)return;
+  try{
+    const data=await providerRequest('/api/agent/tasks');
+    agentTaskList.replaceChildren();
+    if(!data.tasks?.length){
+      const empty=document.createElement('p');empty.className='provider-empty';empty.textContent='No agent tasks yet.';agentTaskList.append(empty);return;
+    }
+    for(const task of data.tasks){
+      const button=document.createElement('button');
+      button.type='button';button.className='agent-task-row'+(task.id===selectedAgentTaskId?' selected':'');
+      const title=document.createElement('b');title.textContent=task.title;
+      const meta=document.createElement('small');meta.textContent=task.status.replaceAll('_',' ')+' · '+task.current_step+' steps done';
+      button.append(title,meta);
+      button.addEventListener('click',()=>openAgentTask(task.id));
+      agentTaskList.append(button);
+    }
+  }catch(error){agentTaskError.textContent=error.message;}
+}
+async function openAgentTask(id){
+  selectedAgentTaskId=id;
+  try{
+    const data=await providerRequest('/api/agent/tasks/'+id);
+    const task=data.task;
+    agentTaskDetail.replaceChildren();
+    const heading=document.createElement('div');heading.className='agent-detail-heading';
+    const title=document.createElement('h2');title.textContent=task.title;
+    const status=document.createElement('span');status.className='agent-status';status.textContent=task.status.replaceAll('_',' ');
+    heading.append(title,status);agentTaskDetail.append(heading);
+    const prompt=document.createElement('p');prompt.className='agent-original-prompt';prompt.textContent=task.prompt;agentTaskDetail.append(prompt);
+    if(Array.isArray(task.plan?.steps)&&task.plan.steps.length){
+      const planTitle=document.createElement('h3');planTitle.textContent='Execution plan · '+task.plan.steps.length+' bounded steps';agentTaskDetail.append(planTitle);
+      for(const step of task.plan.steps){
+        const card=document.createElement('article');card.className='agent-step';
+        const top=document.createElement('div');top.className='agent-step-top';
+        const name=document.createElement('b');name.textContent=step.id+'. '+step.title;
+        const state=document.createElement('span');state.textContent=step.status||'pending';
+        top.append(name,state);
+        const desc=document.createElement('p');desc.textContent=step.description;
+        const tool=document.createElement('small');tool.textContent='Tool: '+step.tool+(step.requiresApproval?' · Approval required':'');
+        card.append(top,desc,tool);
+        const input=document.createElement('pre');input.textContent=JSON.stringify(step.input,null,2);card.append(input);
+        if(step.result){const result=document.createElement('p');result.className='agent-step-result';result.textContent='Result: '+JSON.stringify(step.result);card.append(result);}
+        agentTaskDetail.append(card);
+      }
+    }
+    if(task.result){const result=document.createElement('div');result.className='agent-final-result';result.textContent=task.result;agentTaskDetail.append(result);}
+    const actions=document.createElement('div');actions.className='agent-task-actions';
+    if(task.status==='awaiting_approval'){
+      actions.append(
+        makeAgentButton('Approve & execute',()=>agentTaskAction(id,'approve'),'auth-submit'),
+        makeAgentButton('Reject plan',()=>agentTaskAction(id,'reject'),'provider-danger')
+      );
+    }
+    if(task.status==='running')actions.append(makeAgentButton('Pause',()=>agentTaskAction(id,'pause')));
+    if(task.status==='paused')actions.append(makeAgentButton('Resume',()=>agentTaskAction(id,'resume'),'auth-submit'));
+    if(!['completed','failed','cancelled'].includes(task.status))actions.append(makeAgentButton('Cancel task',()=>agentTaskAction(id,'cancel'),'provider-danger'));
+    actions.append(makeAgentButton('Refresh details',()=>openAgentTask(id)));
+    agentTaskDetail.append(actions);
+    if(data.events?.length){
+      const eventTitle=document.createElement('h3');eventTitle.textContent='Activity history';agentTaskDetail.append(eventTitle);
+      for(const event of data.events){
+        const row=document.createElement('p');row.className='agent-event';
+        row.textContent=event.event_type.replaceAll('.',' · ')+' — '+new Date(event.created_at).toLocaleString();
+        agentTaskDetail.append(row);
+      }
+    }
+    loadAgentTasks();
+  }catch(error){agentTaskError.textContent=error.message;}
+}
+async function agentTaskAction(id,action){
+  agentTaskError.textContent='';
+  try{
+    await providerRequest('/api/agent/tasks/'+id+'/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    await openAgentTask(id);
+  }catch(error){agentTaskError.textContent=error.message;await openAgentTask(id);}
+}
+agentTaskForm.addEventListener('submit',async event=>{
+  event.preventDefault();agentTaskError.textContent='';
+  const button=document.getElementById('createAgentTask');button.disabled=true;
+  try{
+    const created=await providerRequest('/api/agent/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      title:document.getElementById('agentTaskTitle').value.trim(),
+      prompt:document.getElementById('agentTaskPrompt').value.trim()
+    })});
+    selectedAgentTaskId=created.task.id;
+    await providerRequest('/api/agent/tasks/'+created.task.id+'/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    document.getElementById('agentTaskPrompt').value='';
+    await openAgentTask(created.task.id);
+  }catch(error){agentTaskError.textContent=error.message;}
+  finally{button.disabled=false;loadAgentTasks();}
+});
+document.getElementById('refreshAgentTasks').addEventListener('click',loadAgentTasks);
+\nasync function sendMessage(text){
   const value=String(text||'').trim();
   if(!value||sending)return;
   addMessage(value,'user');
@@ -286,13 +391,13 @@ function showView(view){
   chatView.classList.toggle('hidden',view!=='chat');
   infoView.classList.toggle('hidden',view==='chat'||view==='settings');
   providerSettings.classList.toggle('hidden',view!=='settings'||!currentUser);
-  if(view==='settings'&&!currentUser){
+  if(view==='tasks'&&!currentUser){\n    infoView.classList.remove('hidden');\n    document.getElementById('infoTitle').textContent='Sign in required';\n    document.getElementById('infoText').textContent='Sign in to create and manage your private agent tasks.';\n  }\n  if(view==='tasks'&&currentUser)loadAgentTasks();\n  if(view==='settings'&&!currentUser){
     infoView.classList.remove('hidden');
     document.getElementById('infoTitle').textContent='Sign in required';
     document.getElementById('infoText').textContent='Sign in to manage your private AI provider credentials.';
   }
   if(view==='settings'&&currentUser)loadProviderSettings();
-  if(view!=='chat'&&view!=='settings'){
+  if(view!=='chat'&&view!=='settings'&&view!=='tasks'){
     document.getElementById('infoTitle').textContent=labels[view];
     document.getElementById('infoText').textContent=descriptions[view]||'This module is planned.';
   }
