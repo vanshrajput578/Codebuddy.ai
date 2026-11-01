@@ -7,7 +7,6 @@ A phase is complete only after its acceptance tests pass.
 - [x] Document architecture and security boundaries.
 - [x] Create browser-openable web workspace prototype.
 - [x] Add a Gitleaks secret-scanning workflow.
-- [x] Add Gitleaks secret scanning.\n- [x] Add automated API security regression tests.
 - [ ] Select repository license.
 
 ## Phase 1 — Web foundation
@@ -16,13 +15,14 @@ A phase is complete only after its acceptance tests pass.
 - [x] Implement account sign-in and registration UI.
 - [x] Add a server-side Gemini chat API and health endpoint.
 - [x] Add origin checks, request limits, Helmet headers and per-IP rate limiting.
-- [ ] Add automated API security tests.
+- [x] Add automated API security tests.
 Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 
 ## Phase 2 — Backend and accounts
-- [x] Add email/password registration and login endpoints.\n- [x] Add scrypt password hashing and hashed opaque sessions.
+- [x] Add email/password registration and login endpoints.
+- [x] Add scrypt password hashing and hashed opaque sessions.
 - [x] Add PostgreSQL schema for users, sessions and conversation records.
-- [ ] Prisma schema and migrations.
+- [x] Add PostgreSQL schema script for core account and conversation tables.
 - [x] Registration, login, current-session and logout endpoints.
 - [x] Require authenticated sessions and CSRF validation for chat.
 - [ ] Conversation persistence.
