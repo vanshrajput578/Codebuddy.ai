@@ -17,7 +17,7 @@ RUN npm install --omit=dev --no-audit --no-fund \
     && mkdir -p /tmp/nexus-browser/home /tmp/nexus-browser/cache \
     && chown -R nexus:nexus /tmp/nexus-browser
 
-COPY --chown=nexus:nexus computer/ ./computer/
+COPY --chown=nexus:nexus computer/browser-policy.mjs computer/browser-service.mjs computer/browser-worker.mjs ./computer/
 USER nexus
 EXPOSE 4002
 CMD ["node", "computer/browser-worker.mjs"]
