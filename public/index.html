@@ -65,10 +65,13 @@
 <section class="content secondary-view hidden" id="tasksView">
   <div class="section-icon">⌘</div><p class="eyebrow">BOUNDED AGENT RUNTIME</p><h1>Agent Tasks</h1>
   <p class="subheading">Create a task, review the AI-generated plan, then approve execution. Every task is private to your account.</p>
-  <div class="agent-safety"><b>Execution boundary</b><span>Only private-memory search, approved memory saving and response composition are available. No shell, browser, external actions or arbitrary code execution.</span></div>
+  <div class="agent-safety"><b>Computer tools safety</b><span>Public browsing is read-only. Terminal commands require approval and run in a disposable no-network container. Uploaded files are encrypted at rest and private to this task.</span></div>
   <form id="agentTaskForm" class="agent-task-form">
     <label class="auth-field">Task title <span class="muted-optional">(optional)</span><input id="agentTaskTitle" maxlength="120" placeholder="e.g. Organize my project notes"></label>
     <label class="auth-field">What should NEXUS do?<textarea id="agentTaskPrompt" rows="4" maxlength="8000" required placeholder="Describe the task and the outcome you want..."></textarea></label>
+    <label class="auth-field">Attach project files<input id="agentTaskFiles" type="file" multiple><small class="file-help">Up to 30 files · 256 KiB each · 1 MiB total. Files are encrypted before database storage.</small></label>
+    <label class="auth-field">Or attach a project folder<input id="agentTaskFolder" type="file" webkitdirectory directory multiple><small class="file-help">Folder structure is preserved inside the private task workspace.</small></label>
+    <p class="provider-empty" id="agentFileStatus">No files selected.</p>
     <button class="auth-submit" id="createAgentTask" type="submit">Create task & generate plan</button>
     <p class="auth-error" id="agentTaskError" role="alert"></p>
   </form>
