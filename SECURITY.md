@@ -1,13 +1,13 @@
 # Security Policy
 
 ## Secret handling
-- Provider API keys are server-only environment variables.
+- Provider API keys are submitted over the authenticated same-origin API and encrypted at rest; the encryption master key is server-only.
 - Never put provider keys in HTML, CSS, browser JavaScript, mobile app source, public config, commits, screenshots or client-visible API responses.
 - Never prefix provider secrets with frontend-exposed variable conventions such as `VITE_`, `NEXT_PUBLIC_` or `EXPO_PUBLIC_`.
 - Use deployment-platform secret storage in production. Keep local `.env` files untracked.
 - If a key is exposed, revoke it immediately and create a replacement. Deleting it from the latest commit does not remove it from Git history.
 
-## API protections implemented\n- Passwords hashed using scrypt; plaintext passwords are never stored.\n- Random session tokens stored as hashes in PostgreSQL.\n- HttpOnly, SameSite=Strict session cookies; Secure and __Host- prefixed in production.\n- CSRF token validation for authenticated state-changing endpoints.\n- Authentication required before Gemini chat.
+## API protections implemented\n- Passwords hashed using scrypt; plaintext passwords are never stored.\n- Random session tokens stored as hashes in PostgreSQL.\n- HttpOnly, SameSite=Strict session cookies; Secure and __Host- prefixed in production.\n- CSRF token validation for authenticated state-changing endpoints.\n- Authentication required before AI provider calls.
 - Helmet security headers and a restrictive Content Security Policy.
 - Same-origin request checks for the chat endpoint.
 - JSON request size limit and message length validation.
