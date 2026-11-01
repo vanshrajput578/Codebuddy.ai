@@ -21,7 +21,7 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, and `008_agent_task_files.sql` in order.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, `008_agent_task_files.sql`, and `009_agent_profiles.sql` in order.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the API: `npm run dev`.
