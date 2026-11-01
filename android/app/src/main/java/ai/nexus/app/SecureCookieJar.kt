@@ -15,6 +15,8 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+private fun Cookie.isExpired(): Boolean = expiresAt <= System.currentTimeMillis()
+
 /** Persists the server-issued session cookie encrypted with an Android Keystore AES key. */
 class SecureCookieJar(context: Context) : CookieJar {
     private val prefs = context.getSharedPreferences("nexus_secure_session", Context.MODE_PRIVATE)
@@ -25,15 +27,15 @@ class SecureCookieJar(context: Context) : CookieJar {
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         val updated = this.cookies.filterNot { old ->
             cookies.any { it.name == old.name && it.domain == old.domain && it.path == old.path }
-        } + cookies.filter { !it.hasExpired() }
-        this.cookies = updated.filter { !it.hasExpired() }
+        } + cookies.filter { !it.isExpired() }
+        this.cookies = updated.filter { !it.isExpired() }
         persist(this.cookies)
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val valid = cookies.filter { !it.hasExpired() && it.matches(url) }
+        val valid = cookies.filter { !it.isExpired() && it.matches(url) }
         if (valid.size != cookies.size) {
-            cookies = cookies.filterNot { it.hasExpired() }
+            cookies = cookies.filterNot { it.isExpired() }
             persist(cookies)
         }
         return valid
@@ -88,7 +90,7 @@ class SecureCookieJar(context: Context) : CookieJar {
                     if (item.getBoolean("httpOnly")) builder.httpOnly()
                     val expires = item.getLong("expiresAt")
                     if (expires != Long.MAX_VALUE) builder.expiresAt(expires)
-                    builder.build().takeUnless { it.hasExpired() }?.let(::add)
+                    builder.build().takeUnless { it.isExpired() }?.let(::add)
                 }
             }
         } catch (_: Exception) {
