@@ -390,7 +390,7 @@ if (!process.env.DATABASE_URL) {
         assert.ok(recoveredBody.events.some(event => event.event_type === "tool.executed"), "reclaimed work must continue from the persisted cursor");
         await releaseAgentTaskLease(pool, recoveryId, replacementToken);
 
-        const heartbeatTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Heartbeat renewal','Long-running heartbeat test','running',now(),'{"steps":[]}'::jsonb,0) RETURNING id", [first.user.id]);
+        const heartbeatTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Heartbeat renewal','Long-running heartbeat test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
         let heartbeatExpiryBefore = 0;
         let heartbeatExpiryAfter = 0;
         const heartbeatWorker = startAgentWorker({
@@ -404,13 +404,13 @@ if (!process.env.DATABASE_URL) {
           }
         });
         for (let attempt = 0; attempt < 100 && !heartbeatExpiryAfter; attempt += 1) await new Promise(resolve => setTimeout(resolve, 100));
-        const heartbeatHealth = heartbeatWorker.health();
         await heartbeatWorker.stop();
+        const heartbeatHealth = heartbeatWorker.health();
         assert.ok(heartbeatExpiryBefore && heartbeatExpiryAfter > heartbeatExpiryBefore, "heartbeat must extend the lease during long-running work");
         assert.ok(heartbeatHealth.heartbeatSuccesses >= 2, "worker should record repeated successful heartbeats");
         assert.equal(heartbeatHealth.activeTaskId, null, "worker health must clear the active task after completion");
 
-        const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),'{"steps":[]}'::jsonb,0) RETURNING id", [first.user.id]);
+        const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
         const childSource = [
           'import { startAgentWorker } from "./agent/worker-queue.mjs";',
           'import pg from "pg";',
