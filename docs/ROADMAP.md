@@ -124,3 +124,18 @@ Latest verified branch head: `b351da1ec84e03455a1b5bcca900e1a7a9d912d8`. Backend
 - [x] Add unit tests for tool allowlisting, validation, approval metadata, arithmetic safety and time output.
 - [ ] Move execution into a separately supervised durable worker with claims/leases, heartbeat, bounded retries and restart-safe recovery (separate next reliability increment; not part of the Core Agent acceptance scope).
 - [x] Add evidence-driven dynamic replanning with bounded continuation plans and renewed approval for newly proposed writes.
+
+
+## Core Agent Phase 1 — closure record (2026-11-01)
+
+**Status: 100% of the agreed Core Agent Phase 1 scope implemented and CI-verified.** This is the project execution roadmap milestone, not the repository's separately numbered Phase 1 — Web foundation.
+
+Acceptance evidence on branch commit `fe3bbab72695764cee7e4d7ae7ad6834c175ad4b`:
+- Backend workflow: syntax checks and complete Node.js/PostgreSQL integration suite passed.
+- Android workflow: Gradle debug APK build and artifact upload passed.
+- Secret scan: passed.
+- The Android workflow produced the `nexus-ai-debug-apk` artifact (approximately 10.4 MiB).
+
+Core Agent scope closed: bounded provider-assisted planning, central allowlisted tool registry, safe calculator and timezone tool, persisted task/step/event state, approval-gated memory writes, pause/resume/reject/cancel lifecycle, persisted tool evidence, bounded evidence-driven replanning, renewed approval for newly proposed writes, and automated tests.
+
+Explicitly outside this milestone: separately supervised durable worker with leases/heartbeats, browser/terminal sandbox, multi-agent delegation, scheduled automations, live third-party provider verification, signed release APK, physical-device QA and production deployment. These remain future work; their absence does not reduce the completion percentage of the agreed Core Agent Phase 1 scope.
