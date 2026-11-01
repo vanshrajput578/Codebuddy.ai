@@ -51,6 +51,20 @@ Supported adapter IDs: `gemini`, `openai`, `openrouter`, `anthropic`. Users can 
 
 This repository is not yet production-ready for public multi-user traffic. Before launch, add email verification and account recovery, per-user quotas and abuse controls, managed KMS/envelope encryption, database migrations/backups, observability, dependency/SAST scanning, isolated workers and an independent security review. Configure `NODE_ENV=production`, exact HTTPS `APP_ORIGIN`, database TLS as required, and secrets through the hosting platform.
 
+## Isolated browser worker (Phase 6, first increment)
+
+The browser worker is a separate containerized Playwright service. It is read-only: page navigation and text extraction only. It does not click buttons, submit forms, download files, run shell commands or retain cookies between jobs.
+
+1. Generate a worker token with `openssl rand -hex 32`.
+2. Configure `BROWSER_WORKER_TOKEN` and `BROWSER_EGRESS_PROXY`. The proxy must enforce destination-IP ACLs after DNS resolution and block loopback, private, link-local, reserved and cloud metadata ranges. The worker intentionally refuses to start without a proxy.
+3. Build the image: `docker build -f computer/Dockerfile -t nexus-browser-worker .`.
+4. Run it on a private Docker network only, with a read-only root filesystem, bounded tmpfs, memory/CPU/PID limits, no-new-privileges and no host mounts. Do not expose port 4002 publicly and do not pass database or provider secrets to this container.
+5. Keep direct container egress blocked at the network layer; allow access only to the dedicated egress proxy. The proxy must protect against DNS rebinding by checking the resolved destination IP at connection time.
+
+The internal service accepts `POST /execute` with a bearer token and `{userId,url}`; it permits HTTP(S), GET/HEAD only, blocks WebSockets/downloads, caps navigation at 12 seconds and 40 requests, extracts at most 12,000 characters, and allows six jobs per user per minute. It creates and closes a new browser context for every job. `GET /health` reports only idle/busy state.
+
+This increment delivers the isolated browser runtime and policy layer. The `browser.open` agent tool and UI integration are the next implementation slice; they will call this service outside database transactions and require plan approval.
+
 ## Current API
 
 - `GET /api/health`: API/database availability.
