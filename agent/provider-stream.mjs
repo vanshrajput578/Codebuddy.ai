@@ -16,9 +16,9 @@ async function* readSse(response, extract, signal) {
       detail = payload?.error?.message || payload?.message || payload?.error?.status || payload?.error?.type || "";
     } catch {}
     detail = String(detail)
-      .replace(/Bearer\\s+\\S+/gi, "[redacted]")
+      .replace(/Bearer\s+\S+/gi, "[redacted]")
       .replace(/(?:sk-or-v1-|sk-ant-|sk-|AIza)[A-Za-z0-9_-]{12,}/g, "[redacted]")
-      .replace(/[\\r\\n\\t]+/g, " ")
+      .replace(/[\r\n\t]+/g, " ")
       .slice(0, 240);
     throw new Error(`Provider request failed (HTTP ${response.status})${detail ? `: ${detail}` : ""}.`);
   }
