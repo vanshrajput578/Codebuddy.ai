@@ -62,8 +62,12 @@ const chatLimiter = rateLimit({
   windowMs: 60_000, limit: 10, standardHeaders: "draft-8",
   legacyHeaders: false, message: { error: "Too many requests. Try again in a minute." }
 });
+const configuredAgentLimit = Number.parseInt(process.env.AGENT_RATE_LIMIT_PER_MINUTE || "20", 10);
+const agentRateLimit = Number.isInteger(configuredAgentLimit) && configuredAgentLimit >= 5 && configuredAgentLimit <= 100
+  ? configuredAgentLimit
+  : 20;
 const agentLimiter = rateLimit({
-  windowMs: 60_000, limit: 20, standardHeaders: "draft-8",
+  windowMs: 60_000, limit: agentRateLimit, standardHeaders: "draft-8",
   legacyHeaders: false, message: { error: "Too many agent requests. Try again in a minute." }
 });
 
