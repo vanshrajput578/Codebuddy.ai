@@ -79,6 +79,7 @@ export function startAgentWorker({
   let stopped = false;
   let active = false;
   let timer = null;
+  let wakeWaiter = null;
   const stats = {
     startedAt: new Date().toISOString(), lastPollAt: null, lastClaimAt: null,
     lastHeartbeatAt: null, lastTaskFinishedAt: null, claims: 0,
@@ -90,7 +91,14 @@ export function startAgentWorker({
     stats.lastError = { message: String(error?.message || error).slice(0, 300), at: new Date().toISOString() };
     try { onError(error); } catch {}
   };
-  const wait = ms => new Promise(resolve => { timer = setTimeout(resolve, ms); });
+  const wait = ms => new Promise(resolve => {
+    wakeWaiter = resolve;
+    timer = setTimeout(() => {
+      timer = null;
+      wakeWaiter = null;
+      resolve();
+    }, ms);
+  });
 
   async function poll() {
     if (stopped || active) return;
@@ -98,7 +106,8 @@ export function startAgentWorker({
     stats.lastPollAt = new Date().toISOString();
     try {
       const task = await claimNextAgentTask(pool, workerId, leaseMs);
-      if (!task) return;
+      if (!task) { stats.lastError = null; return; }
+      stats.lastError = null;
       stats.claims += 1;
       stats.lastClaimAt = new Date().toISOString();
       stats.activeTaskId = task.id;
@@ -120,6 +129,7 @@ export function startAgentWorker({
             return;
           }
           stats.heartbeatSuccesses += 1;
+          stats.lastError = null;
           stats.lastHeartbeatAt = new Date().toISOString();
         } catch (error) {
           stats.heartbeatFailures += 1;
@@ -163,6 +173,8 @@ export function startAgentWorker({
     stop: async () => {
       stopped = true;
       if (timer) clearTimeout(timer);
+      timer = null;
+      if (wakeWaiter) { const wake = wakeWaiter; wakeWaiter = null; wake(); }
       await done;
     }
   };
