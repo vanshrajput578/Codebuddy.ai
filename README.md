@@ -2,37 +2,48 @@
 
 **Your Personal Autonomous AI Workspace**
 
-NEXUS AI is an AI workspace foundation with a browser UI and a server-side Gemini chat API.
+NEXUS AI is an AI workspace foundation with a same-origin web client, a Node.js API, PostgreSQL-backed accounts and a server-side Gemini integration.
 
-> **Current status:** The frontend can call a server-side Gemini endpoint. Agent execution, persistent memory, Android client, account authentication, browser automation and sandbox are not implemented. This is not production-ready for public multi-user use.
+> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Conversation persistence, provider key vault, multiple providers, autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
 
-## Run locally
-1. Install Node.js 20 or newer.
-2. Run `npm install`.
-3. Copy `.env.example` to `.env`.
-4. Set `GEMINI_API_KEY` and `APP_ORIGIN` in `.env`.
-5. Start the API with `npm run dev`.
-6. Serve the static frontend on the configured origin and reverse-proxy `/api` to the API server. The frontend and API must be same-origin; do not point browser code directly at a provider API.
+## Local setup
+Requirements: Node.js 20+, PostgreSQL 14+ and a Gemini API key.
 
-## Secret safety
-- **Never** put provider keys in `app.js`, HTML, CSS, frontend build variables or GitHub commits.
-- Keep the real `.env` file local and untracked. `.env.example` contains placeholders only.
-- Use your hosting provider's server-side secret manager in deployment.
-- If a key was ever committed or shared, revoke it and issue a new one. Removing a key from the latest commit is not enough.
-- The API never returns provider credentials or raw provider errors.
+1. Create a PostgreSQL database and user.
+2. Copy `.env.example` to `.env`; keep this file private and untracked.
+3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000` and `GEMINI_API_KEY` in `.env`.
+4. Apply the database schema: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`.
+5. Install dependencies: `npm install`.
+6. Run the security tests: `npm test`.
+7. Start the app: `npm run dev`.
+8. Open `http://localhost:4000`.
+
+The Express server serves the frontend and API on the same origin. Do not host the frontend separately unless you deliberately configure a secure same-origin reverse proxy.
+
+## Security model
+- Provider credentials are read only by the server from environment variables.
+- Passwords are hashed with Node.js scrypt; plaintext passwords are never stored.
+- Session tokens are random, stored as SHA-256 hashes in PostgreSQL and sent only in HttpOnly, SameSite=Strict cookies.
+- Production cookies use the Secure flag and the `__Host-` prefix.
+- State-changing authenticated requests require a CSRF token.
+- Auth and chat endpoints have rate limits; requests have size and input limits.
+- Helmet security headers and a restrictive Content Security Policy are enabled.
+- Gitleaks scans repository history in GitHub Actions.
+
+## Production deployment notes
+Set `NODE_ENV=production`, a strong private database credential, `APP_ORIGIN` to the exact HTTPS origin, `DATABASE_SSL=true` when required by your database host, and `GEMINI_API_KEY` using the host's secret manager. Set `TRUST_PROXY=true` only when exactly one trusted reverse proxy sits in front of the app. Never commit a real `.env` file.
+
+This is not yet production-ready for public multi-user traffic. Add per-user AI quotas, conversation persistence, account recovery/email verification, credential vault/KMS, dependency scanning, operational monitoring, backups and a third-party security review before launch.
 
 ## Current API
-- `GET /api/health`: basic health and provider-configured status; no secrets.
-- `POST /api/chat`: sends a user message to Gemini from the server.
-- Security controls: Helmet headers, restrictive CSP, origin checks, request size/message validation, per-IP rate limiting and no-store API responses.
+- `GET /api/health`: database availability only; no secret values.
+- `POST /api/auth/register`: create an account.
+- `POST /api/auth/login`: create an authenticated session.
+- `GET /api/auth/me`: inspect current session and rotate CSRF token.
+- `POST /api/auth/logout`: revoke current session.
+- `POST /api/chat`: authenticated Gemini request with CSRF validation.
 
-## Important production warning
-Origin checks are not authentication. IP rate limiting is not a substitute for per-user quotas. Before public deployment, add real user authentication, per-user authorization and quotas, CSRF protection for cookie sessions, encrypted user credential storage using a managed KMS, monitoring and an isolated worker for tools. See [SECURITY.md](SECURITY.md) and [security implementation notes](docs/SECURITY-IMPLEMENTATION.md).
-
-## Project docs
-- [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Security policy](SECURITY.md)
+See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPLEMENTATION.md), [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
 
 ## License
 No open-source license has been selected yet. Normal copyright applies.
