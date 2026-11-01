@@ -15,7 +15,7 @@
 <button class="nav-item active" data-view="chat"><span>◈</span> AI Workspace</button>
 <button class="nav-item" data-view="agents"><span>⌘</span> Agents <em>Planned</em></button>
 <button class="nav-item" data-view="tasks"><span>◷</span> Agent Tasks</button>
-<button class="nav-item" data-view="files"><span>▤</span> Files <em>Planned</em></button>
+<button class="nav-item" data-view="files"><span>▤</span> Files</button>
 <button class="nav-item" data-view="memory"><span>◎</span> Memory <em>Planned</em></button>
 <button class="nav-item" data-view="settings"><span>⚙</span> AI Providers</button>
 </nav>
@@ -61,6 +61,13 @@
 <p class="auth-error" id="providerError" role="alert"></p><p class="provider-success" id="providerSuccess" role="status"></p>
 </form>
 <div class="provider-list"><h2>Configured providers</h2><div id="providerList">Sign in to load provider settings.</div></div>
+</section>
+<section class="content secondary-view hidden" id="filesView">
+  <div class="section-icon">▤</div><p class="eyebrow">PRIVATE TASK STORAGE</p><h1>Files</h1>
+  <p class="subheading">Files attached to your agent tasks and returned by isolated terminal runs. Contents are encrypted at rest and accessible only to your account.</p>
+  <div class="agent-safety"><b>Workspace boundary</b><span>Files are scoped to their parent task. Downloading reads only your own task files; deleting a file removes it from the encrypted workspace.</span></div>
+  <div class="files-toolbar"><button class="provider-secondary" id="refreshFiles" type="button">Refresh files</button><span id="filesCount" class="provider-empty">Loading...</span></div>
+  <div id="filesList"><p class="provider-empty">Sign in to load your files.</p></div>
 </section>
 <section class="content secondary-view hidden" id="tasksView">
   <div class="section-icon">⌘</div><p class="eyebrow">BOUNDED AGENT RUNTIME</p><h1>Agent Tasks</h1>
