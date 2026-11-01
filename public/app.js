@@ -22,6 +22,7 @@ let sending=false;
 let registering=false;
 let csrfToken=null;
 let currentUser=null;
+let conversationId=null;
 
 function addMessage(text,kind){
   const node=document.createElement('div');
@@ -39,10 +40,13 @@ function setAuthenticated(user,token){
   chatArea.classList.remove('hidden');
   accountLabel.textContent=user.displayName+' · '+user.email;
   composerStatus.textContent='Signed in · Provider key stays on server';
+  loadConversations();
 }
 function setUnauthenticated(){
   currentUser=null;
   csrfToken=null;
+  conversationId=null;
+  document.getElementById('conversationList').replaceChildren();
   authPanel.classList.remove('hidden');
   accountBar.classList.add('hidden');
   suggestions.classList.add('hidden');
@@ -101,6 +105,44 @@ document.getElementById('logoutButton').addEventListener('click',async()=>{
     setAuthMode(false);
   }
 });
+async function loadConversations(){
+  const list=document.getElementById('conversationList');
+  if(!currentUser)return;
+  try{
+    const response=await fetch('/api/conversations',{credentials:'same-origin',cache:'no-store'});
+    if(!response.ok)return;
+    const data=await response.json();
+    list.replaceChildren();
+    for(const item of (data.conversations||[])){
+      const button=document.createElement('button');
+      button.type='button';
+      button.className='conversation-item'+(item.id===conversationId?' active':'');
+      button.textContent=item.title||'New conversation';
+      button.title=item.title||'New conversation';
+      button.addEventListener('click',()=>loadConversation(item.id));
+      list.appendChild(button);
+    }
+    if(!data.conversations?.length){
+      const empty=document.createElement('p');
+      empty.className='conversation-empty';
+      empty.textContent='No conversations yet';
+      list.appendChild(empty);
+    }
+  }catch{}
+}
+async function loadConversation(id){
+  try{
+    const response=await fetch('/api/conversations/'+encodeURIComponent(id)+'/messages',{credentials:'same-origin',cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||'Could not open conversation.');
+    conversationId=id;
+    messages.replaceChildren();
+    for(const item of (data.messages||[]))addMessage(item.content,item.role==='user'?'user':'system');
+    document.querySelectorAll('.conversation-item').forEach(item=>item.classList.toggle('active',item.textContent===document.querySelector('.conversation-item.active')?.textContent));
+    showView('chat');
+    loadConversations();
+  }catch(error){addMessage(error.message||'Could not open conversation.','system');}
+}
 async function sendMessage(text){
   const value=String(text||'').trim();
   if(!value||sending)return;
@@ -113,14 +155,16 @@ async function sendMessage(text){
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken||''},
       credentials:'same-origin',cache:'no-store',
-      body:JSON.stringify({message:value})
+      body:JSON.stringify({message:value,...(conversationId?{conversationId}:{})})
     });
     const data=await response.json().catch(()=>({}));
     if(response.status===401){setUnauthenticated();throw new Error('Your session expired. Sign in again.');}
     if(!response.ok)throw new Error(data.error||'Request failed. Check the API server.');
     if(typeof data.answer!=='string')throw new Error('The server returned an invalid response.');
     addMessage(data.answer,'system');
-    composerStatus.textContent='Connected · Provider key stays on server';
+    conversationId=data.conversationId||conversationId;
+    loadConversations();
+    composerStatus.textContent='Connected · Saved to your account';
   }catch(error){
     addMessage(error.message||'Unable to reach the NEXUS API. Confirm that the backend is running.','system');
     composerStatus.textContent='Request failed · Check server';
@@ -142,7 +186,9 @@ document.querySelectorAll('.suggestion').forEach(button=>button.addEventListener
 }));
 document.getElementById('newChat').addEventListener('click',()=>{
   messages.replaceChildren();
+  conversationId=null;
   promptInput.value='';
+  loadConversations();
   showView('chat');
 });
 function showView(view){
