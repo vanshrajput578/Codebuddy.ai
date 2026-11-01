@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
 if (!process.env.DATABASE_URL) {
   test("PostgreSQL integration suite requires DATABASE_URL", { skip: true }, () => {});
@@ -10,7 +11,8 @@ if (!process.env.DATABASE_URL) {
   process.env.APP_ORIGIN = "http://127.0.0.1:43127";
   process.env.CREDENTIAL_ENCRYPTION_KEY = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=";
 
-  const { app, pool, recoverRunningAgentTasks } = await import("../server.mjs");
+  const { app, pool, runAgentTask } = await import("../server.mjs");
+  const { startAgentWorker, claimNextAgentTask, releaseAgentTaskLease } = await import("../agent/worker-queue.mjs");
   const origin = process.env.APP_ORIGIN;
   const baseUrl = origin;
   let server;
@@ -34,6 +36,7 @@ if (!process.env.DATABASE_URL) {
     const migration = await readFile(new URL("../db/migrations/003_agent_runtime.sql", import.meta.url), "utf8");
     const stepLimitMigration = await readFile(new URL("../db/migrations/004_agent_step_limit.sql", import.meta.url), "utf8");
     const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
+    const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -41,6 +44,9 @@ if (!process.env.DATABASE_URL) {
     await pool.query(stepLimitMigration);
     await pool.query(replanningMigration);
     await pool.query(replanningMigration);
+    await pool.query(workerMigration);
+    await pool.query(workerMigration);
+    let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -286,16 +292,18 @@ if (!process.env.DATABASE_URL) {
         });
         assert.equal(agentApprove.status, 202);
         async function waitForAgentTask(id, expectedStatus) {
-          for (let attempt = 0; attempt < 100; attempt += 1) {
-            const response = await originalFetch(baseUrl + `/api/agent/tasks/${id}`, { headers: { cookie: first.cookie } });
+          let lastStatus = "missing";
+          for (let attempt = 0; attempt < 500; attempt += 1) {
+            const response = await originalFetch(baseUrl + "/api/agent/tasks/" + id, { headers: { cookie: first.cookie } });
             const body = await response.json();
-            if (body.task?.status === expectedStatus) return body;
-            if (["failed", "cancelled"].includes(body.task?.status) && body.task.status !== expectedStatus) {
-              assert.fail(`Task entered unexpected terminal state: ${body.task.status}`);
+            lastStatus = body.task?.status || "missing";
+            if (lastStatus === expectedStatus) return body;
+            if (["failed", "cancelled"].includes(lastStatus) && lastStatus !== expectedStatus) {
+              assert.fail("Task entered unexpected terminal state: " + lastStatus + " result=" + String(body.task?.result || ""));
             }
             await new Promise(resolve => setTimeout(resolve, 20));
           }
-          assert.fail(`Task did not reach ${expectedStatus} in time`);
+          assert.fail("Task did not reach " + expectedStatus + " in time; last status=" + lastStatus + "; worker=" + JSON.stringify(worker?.health?.() || null));
         }
         const replannedAgent = await waitForAgentTask(agentTaskId, "awaiting_approval");
         assert.equal(replannedAgent.task.current_step, 1, "the first approved search step must remain completed");
@@ -363,12 +371,80 @@ if (!process.env.DATABASE_URL) {
           method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
         });
         assert.equal(recoveryPlan.status, 200);
-        await pool.query("UPDATE agent_tasks SET status='running',approved_at=now() WHERE id=$1 AND user_id=$2", [recoveryId, first.user.id]);
-        assert.equal(await recoverRunningAgentTasks(), 1);
-        const recoveredTask = await originalFetch(baseUrl + `/api/agent/tasks/${recoveryId}`, { headers: { cookie: first.cookie } });
-        const recoveredBody = await recoveredTask.json();
-        assert.equal(recoveredBody.task.status, "paused");
-        assert.ok(recoveredBody.events.some(event => event.event_type === "task.recovered_paused"));
+        await worker.stop();
+        await pool.query("UPDATE agent_tasks SET status='running',approved_at=now(),lease_owner='crashed-worker',lease_token=$1,lease_expires_at=now()-interval '1 second',worker_attempts=1 WHERE id=$2 AND user_id=$3", [randomUUID(), recoveryId, first.user.id]);
+        const claims = await Promise.all([
+          claimNextAgentTask(pool, "worker-a", 5_000),
+          claimNextAgentTask(pool, "worker-b", 5_000)
+        ]);
+        assert.equal(claims.filter(Boolean).length, 1, "SKIP LOCKED lease claiming must prevent two workers owning one task");
+        const claimed = claims.find(Boolean);
+        assert.equal(claimed.worker_attempts, 2, "an expired lease must be reclaimed as a bounded retry");
+        const replacementToken = randomUUID();
+        await pool.query("UPDATE agent_tasks SET lease_owner='replacement-worker',lease_token=$1,lease_expires_at=now()+interval '30 seconds' WHERE id=$2", [replacementToken, recoveryId]);
+        await runAgentTask(recoveryId, first.user.id, claimed.lease_token);
+        const fenced = await pool.query("SELECT status,current_step FROM agent_tasks WHERE id=$1", [recoveryId]);
+        assert.equal(fenced.rows[0].status, "running", "a stale worker must not execute after its fencing token is replaced");
+        assert.equal(fenced.rows[0].current_step, 0, "a stale worker must not advance the execution cursor");
+        await runAgentTask(recoveryId, first.user.id, replacementToken);
+        const recoveredBody = await waitForAgentTask(recoveryId, "completed");
+        assert.equal(recoveredBody.task.worker_attempts, 2);
+        assert.ok(recoveredBody.events.some(event => event.event_type === "tool.executed"), "reclaimed work must continue from the persisted cursor");
+        await releaseAgentTaskLease(pool, recoveryId, replacementToken);
+
+        const heartbeatTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Heartbeat renewal','Long-running heartbeat test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
+        let heartbeatExpiryBefore = 0;
+        let heartbeatExpiryAfter = 0;
+        const heartbeatWorker = startAgentWorker({
+          pool, workerId: "heartbeat-integration-worker", pollIntervalMs: 10, leaseMs: 5_000,
+          executeTask: async id => {
+            const before = await pool.query("SELECT lease_expires_at FROM agent_tasks WHERE id=$1", [id]);
+            heartbeatExpiryBefore = new Date(before.rows[0].lease_expires_at).getTime();
+            await new Promise(resolve => setTimeout(resolve, 6_500));
+            const after = await pool.query("SELECT lease_expires_at FROM agent_tasks WHERE id=$1", [id]);
+            heartbeatExpiryAfter = new Date(after.rows[0].lease_expires_at).getTime();
+          }
+        });
+        for (let attempt = 0; attempt < 100 && !heartbeatExpiryAfter; attempt += 1) await new Promise(resolve => setTimeout(resolve, 100));
+        await heartbeatWorker.stop();
+        const heartbeatHealth = heartbeatWorker.health();
+        assert.ok(heartbeatExpiryBefore && heartbeatExpiryAfter > heartbeatExpiryBefore, "heartbeat must extend the lease during long-running work");
+        assert.ok(heartbeatHealth.heartbeatSuccesses >= 2, "worker should record repeated successful heartbeats");
+        assert.equal(heartbeatHealth.activeTaskId, null, "worker health must clear the active task after completion");
+
+        await pool.query("UPDATE agent_tasks SET status='failed',result='Integration fixture cleanup' WHERE status='running'");
+        const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
+        const child = spawn(process.execPath, ["tests/fixtures/worker-hold.mjs"], {
+          cwd: process.cwd(), env: process.env, stdio: ["ignore", "pipe", "pipe"]
+        });
+        let childOutput = "";
+        child.stdout.on("data", chunk => { childOutput += chunk.toString(); });
+        child.stderr.on("data", chunk => { childOutput += chunk.toString(); });
+        let childClaimed = false;
+        for (let attempt = 0; attempt < 200; attempt += 1) {
+          const lease = await pool.query("SELECT lease_owner FROM agent_tasks WHERE id=$1", [crashTask.rows[0].id]);
+          if (lease.rows[0]?.lease_owner === "hard-kill-worker") { childClaimed = true; break; }
+          if (child.exitCode !== null) break;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        if (!childClaimed && child.exitCode === null && child.signalCode === null) {
+          const failedChildExit = new Promise(resolve => child.once("exit", resolve));
+          child.kill("SIGKILL");
+          await failedChildExit;
+        }
+        assert.equal(childClaimed, true, "subprocess worker must claim the test task; exit=" + child.exitCode + " signal=" + child.signalCode + " output=" + childOutput);
+        if (child.exitCode === null && child.signalCode === null) {
+          const childExit = new Promise(resolve => child.once("exit", resolve));
+          child.kill("SIGKILL");
+          await childExit;
+        }
+        await new Promise(resolve => setTimeout(resolve, 5_200));
+        const reclaimedAfterKill = await claimNextAgentTask(pool, "post-crash-recovery-worker", 5_000);
+        assert.equal(reclaimedAfterKill?.id, crashTask.rows[0].id, "another worker must reclaim the task after a hard process kill");
+        assert.equal(reclaimedAfterKill.worker_attempts, 2);
+        await releaseAgentTaskLease(pool, crashTask.rows[0].id, reclaimedAfterKill.lease_token);
+        await pool.query("UPDATE agent_tasks SET status='cancelled' WHERE id=$1", [crashTask.rows[0].id]);
+        await pool.query("UPDATE agent_tasks SET status='completed' WHERE id=$1", [heartbeatTask.rows[0].id]);
 
         const rejectedCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
@@ -452,6 +528,7 @@ if (!process.env.DATABASE_URL) {
       assert.equal(afterLogout.status, 401);
     } finally {
       await pool.query("DELETE FROM users WHERE id = ANY($1::uuid[])", [[first.user.id, second.user.id]]);
+      await worker.stop();
       await new Promise(resolve => server.close(resolve));
       await pool.end();
     }
