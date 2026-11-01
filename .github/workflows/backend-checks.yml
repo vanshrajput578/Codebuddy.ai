@@ -29,6 +29,7 @@ jobs:
       DATABASE_URL: postgresql://nexus:nexus_test_password@127.0.0.1:5432/nexus_test
       APP_ORIGIN: http://127.0.0.1:43127
       CREDENTIAL_ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      AGENT_RATE_LIMIT_PER_MINUTE: 100
     steps:
       - name: Checkout
         uses: actions/checkout@v4
