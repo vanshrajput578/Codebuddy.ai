@@ -209,7 +209,17 @@ if (!process.env.DATABASE_URL) {
               { title: "Summarize the updated evidence", description: "Summarize the search result and approved save.", tool: "response.compose", input: { text: "Agent finished after dynamic replanning." } }
             ] });
           } else if (lastMessage.includes("NEXUS_AGENT_PLAN_JSON")) {
-            if (lastMessage.includes("BROWSER_OPEN_NO_REPLAN_TEST")) {
+            if (lastMessage.includes("TERMINAL_RUN_VALID_TEST")) {
+              content = JSON.stringify({ steps: [
+                { title: "Run isolated command", description: "Run the requested command inside the no-network terminal sandbox.", tool: "terminal.run", input: { command: "printf 'NEXUS_TERMINAL_OK'", files: [] }, replanAfter: true },
+                { title: "Summarize terminal result", description: "Summarize the bounded terminal output.", tool: "response.compose", input: { text: "Terminal command completed." } }
+              ] });
+            } else if (lastMessage.includes("TERMINAL_RUN_NO_REPLAN_TEST")) {
+              content = JSON.stringify({ steps: [
+                { title: "Run isolated command", description: "Run a terminal command.", tool: "terminal.run", input: { command: "id", files: [] } },
+                { title: "Summarize terminal result", description: "Summarize the terminal output.", tool: "response.compose", input: { text: "Terminal command completed." } }
+              ] });
+            } else if (lastMessage.includes("BROWSER_OPEN_NO_REPLAN_TEST")) {
               content = JSON.stringify({ steps: [
                 { title: "Inspect a public page", description: "Read a public page in the isolated browser.", tool: "browser.open", input: { url: "https://example.com/" } },
                 { title: "Summarize the page", description: "Summarize the inspected page evidence.", tool: "response.compose", input: { text: "Page reviewed." } }
@@ -497,6 +507,33 @@ if (!process.env.DATABASE_URL) {
           method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
         });
         assert.equal(browserNoReplan.status, 502, "browser output must flow through evidence-driven replanning");
+
+        const terminalCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Run in terminal sandbox", prompt: "TERMINAL_RUN_VALID_TEST" })
+        });
+        const terminalId = (await terminalCreate.json()).task.id;
+        const terminalPlan = await originalFetch(baseUrl + `/api/agent/tasks/${terminalId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        const terminalPlanBody = await terminalPlan.json();
+        assert.equal(terminalPlan.status, 200, JSON.stringify(terminalPlanBody));
+        assert.equal(terminalPlanBody.task.status, "awaiting_approval");
+        assert.equal(terminalPlanBody.task.plan.steps[0].tool, "terminal.run");
+        assert.equal(terminalPlanBody.task.plan.steps[0].requiresApproval, true);
+        assert.equal(terminalPlanBody.task.plan.steps[0].replanAfter, true);
+
+        const terminalNoReplanCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Reject unsafe terminal plan", prompt: "TERMINAL_RUN_NO_REPLAN_TEST" })
+        });
+        const terminalNoReplanId = (await terminalNoReplanCreate.json()).task.id;
+        const terminalNoReplan = await originalFetch(baseUrl + `/api/agent/tasks/${terminalNoReplanId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(terminalNoReplan.status, 502, "terminal output must flow through evidence-driven replanning");
 
         const invalidCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
