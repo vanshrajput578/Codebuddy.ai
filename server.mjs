@@ -938,6 +938,7 @@ app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requi
       "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.planning',$2::jsonb)",
       [req.params.id, JSON.stringify({ status: "planning" })]
     );
+    const agentDefinition = getAgentDefinition(started.rows[0].agent_profile);
     const selected = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
     const provider = selected.rows[0]?.provider;
     if (!provider) throw new Error("Configure an AI provider before planning tasks.");
