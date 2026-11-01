@@ -11,7 +11,7 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 - Implemented: PostgreSQL-backed task records and event history, provider-assisted planner (maximum eight steps), allowlisted tools, explicit plan approval, pause/resume/reject/cancel controls, persisted tool results, evidence-driven replanning (maximum two rounds), and fresh approval when a continuation introduces a write.
 - Agent execution boundary: API requests only transition tasks into the durable running queue. A separate `npm run worker` process claims PostgreSQL tasks with `FOR UPDATE SKIP LOCKED`, a UUID fencing token, a renewable lease and a bounded three-claim crash-recovery limit. The API does not execute agent steps. External computer capabilities are limited to approval-gated `browser.open` (read-only public pages) and `terminal.run` (commands inside a disposable, no-network container). The per-task file workspace persists in PostgreSQL with AES-256-GCM encryption; no host filesystem access, arbitrary HTTP access or device control is exposed.
 - Implemented on the Phase 5 branch: native Kotlin/Jetpack Compose Android client for authentication, encrypted session-cookie storage, chat/history, provider settings and agent task creation/plan approval/lifecycle controls. Latest Android CI on branch head `b351da1` passed and uploaded a debug APK artifact (10.4 MiB); no signed release APK or physical-device QA is verified.
-- Not complete: production deployment and network-policy verification for computer tools, persistent workspaces, multi-agent delegation and scheduled automations.
+- Not complete: production deployment and network-policy verification for computer tools, persistent workspaces, and full multi-agent/delegation and scheduled automation acceptance.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
 
 ## Local setup
@@ -21,12 +21,12 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, `008_agent_task_files.sql`, and `009_agent_profiles.sql` in order.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, `008_agent_task_files.sql`, `009_agent_profiles.sql`, `010_agent_delegations.sql`, and `011_agent_automations_notifications.sql` in order.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the API: `npm run dev`.
 8. In a separate process/container using the same `DATABASE_URL`, start the agent worker: `npm run worker`. The worker exposes `GET http://127.0.0.1:4001/health` by default; configure `WORKER_HEALTH_HOST` and `WORKER_HEALTH_PORT` only when your deployment health checker needs a different bind address/port. Keep the health port private behind a firewall or private network.
-9. Run the API and worker under a process supervisor (systemd, Docker restart policy, or an equivalent host supervisor). The worker handles `SIGINT`/`SIGTERM`, stops claiming new work and drains its active task before exiting. A hard kill is recovered by lease expiry and a later worker claim.
+10. Run the API and worker under a process supervisor (systemd, Docker restart policy, or an equivalent host supervisor). The worker handles `SIGINT`/`SIGTERM`, stops claiming new work and drains its active task before exiting. A hard kill is recovered by lease expiry and a later worker claim.
 10. Open `http://localhost:4000`, register, then open **AI Providers** to add a provider key.
 
 The Express server serves the frontend and API on the same origin. Do not host the frontend separately unless a secure same-origin reverse proxy is deliberately configured.
