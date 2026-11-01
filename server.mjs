@@ -17,7 +17,6 @@ const app = express();
 const appDirectory = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 4000);
 const appOrigin = process.env.APP_ORIGIN;
-const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const providerNames = ["gemini", "openai", "openrouter", "anthropic"];
 const providerDefaults = { gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini", openrouter: "openai/gpt-4.1-mini", anthropic: "claude-3-5-haiku-latest" };
 const providerLabels = { gemini: "Google Gemini", openai: "OpenAI", openrouter: "OpenRouter", anthropic: "Anthropic Claude" };
