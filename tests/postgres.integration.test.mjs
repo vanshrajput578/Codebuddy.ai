@@ -683,9 +683,6 @@ if (!process.env.DATABASE_URL) {
         scheduledTasks = await processDueAgentSchedules(pool, {
           now: new Date(), batchSize: 10, planTask: planScheduledAgentTask
         });
-        recurringTasks = await processDueAgentSchedules(pool, {
-          now: new Date(), batchSize: 10, planTask: planScheduledAgentTask
-        });
       } finally {
         globalThis.fetch = originalScheduledFetch;
       }
@@ -738,6 +735,29 @@ if (!process.env.DATABASE_URL) {
         "INSERT INTO agent_schedules (user_id,title,prompt,agent_profile,interval_minutes,timezone,next_run_at) VALUES ($1,$2,$3,'general',15,'Asia/Kolkata',$4) RETURNING id",
         [first.user.id, "Project status check", "Review the current project status.", recurringAt]
       );
+      const originalRecurringFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        const plan = {
+          steps: [{
+            title: "Review project status",
+            description: "Prepare a concise status summary for approval.",
+            tool: "response.compose",
+            input: { text: "Project status summary is ready for approval." }
+          }]
+        };
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(plan) } }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      };
+      let recurringTasks;
+      try {
+        recurringTasks = await processDueAgentSchedules(pool, {
+          now: new Date(), batchSize: 10, planTask: planScheduledAgentTask
+        });
+      } finally {
+        globalThis.fetch = originalRecurringFetch;
+      }
       assert.equal(recurringTasks.length, 1);
       assert.equal(recurringTasks[0].planStatus, "awaiting_approval");
       assert.notEqual(recurringTasks[0].taskId, scheduledTasks[0].taskId);
