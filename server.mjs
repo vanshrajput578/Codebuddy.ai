@@ -42,8 +42,8 @@ const chatLimiter = rateLimit({
 function sameOriginOnly(req, res, next) {
   const origin = req.get("origin");
   const fetchSite = req.get("sec-fetch-site");
-  if (fetchSite === "cross-site" || (origin && (!appOrigin || origin !== appOrigin))) {
-    return res.status(403).json({ error: "Cross-origin request blocked." });
+  if (!appOrigin || origin !== appOrigin || (fetchSite && fetchSite !== "same-origin")) {
+    return res.status(403).json({ error: "Request origin is not allowed." });
   }
   next();
 }
