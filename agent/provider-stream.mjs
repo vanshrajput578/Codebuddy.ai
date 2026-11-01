@@ -18,6 +18,7 @@ async function* readSse(response, extract, signal) {
       if (signal?.aborted) throw new Error("Stream cancelled.");
       const { value, done } = await reader.read();
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      buffer = buffer.replace(/\\r\\n/g, "\\n");
       let boundary;
       while ((boundary = buffer.indexOf("\\n\\n")) >= 0) {
         const frame = buffer.slice(0, boundary).replace(/\\r/g, "");
