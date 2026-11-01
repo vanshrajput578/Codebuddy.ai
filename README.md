@@ -9,7 +9,7 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 - Implemented in code: registration/login, scrypt password hashing, opaque session cookies, CSRF checks, user-owned conversations, encrypted provider-key storage, provider selection and four provider adapters (Gemini, OpenAI, OpenRouter, Anthropic).
 - Automated verification: syntax checks, isolated API security tests, PostgreSQL integration tests and Gitleaks secret scanning run in GitHub Actions.
 - Implemented: PostgreSQL-backed task records and event history, provider-assisted planner (maximum eight steps), allowlisted tools, explicit plan approval, pause/resume/reject/cancel controls, persisted tool results, evidence-driven replanning (maximum two rounds), and fresh approval when a continuation introduces a write.
-- Agent execution boundary: execution currently runs in-process after the request is accepted. Restart recovery pauses interrupted tasks; a separately supervised durable worker with leases/heartbeats is not implemented yet. No shell, browser, arbitrary HTTP, filesystem or device-control tools are exposed.
+- Agent execution boundary: API requests only transition tasks into the durable running queue. A separate `npm run worker` process claims PostgreSQL tasks with `FOR UPDATE SKIP LOCKED`, a UUID fencing token, a renewable lease and a bounded three-claim crash-recovery limit. The API does not execute agent steps. No shell, browser, arbitrary HTTP, filesystem or device-control tools are exposed.
 - Implemented on the Phase 5 branch: native Kotlin/Jetpack Compose Android client for authentication, encrypted session-cookie storage, chat/history, provider settings and agent task creation/plan approval/lifecycle controls. Latest Android CI on branch head `b351da1` passed and uploaded a debug APK artifact (10.4 MiB); no signed release APK or physical-device QA is verified.
 - Not implemented: computer-use sandbox, multi-agent delegation and scheduled automations.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
@@ -21,11 +21,12 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database with the earlier task queue schema, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/003_agent_runtime.sql`.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, and `006_agent_worker_leases.sql` in order.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
-7. Start the app: `npm run dev`.
-8. Open `http://localhost:4000`, register, then open **AI Providers** to add a provider key.
+7. Start the API: `npm run dev`.
+8. In a separate process/container using the same `DATABASE_URL`, start the agent worker: `npm run worker`.
+9. Open `http://localhost:4000`, register, then open **AI Providers** to add a provider key.
 
 The Express server serves the frontend and API on the same origin. Do not host the frontend separately unless a secure same-origin reverse proxy is deliberately configured.
 
