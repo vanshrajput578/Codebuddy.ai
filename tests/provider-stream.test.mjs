@@ -69,3 +69,21 @@ test("stream adapter retries one transient provider response before streaming", 
     assert.equal(attempts, 2);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("stream adapter applies the registry default model when no model is configured", async () => {
+  const originalFetch = globalThis.fetch;
+  let captured;
+  globalThis.fetch = async (url, options) => {
+    captured = { url: String(url), body: JSON.parse(options.body) };
+    return new Response('data: {"choices":[{"delta":{"content":"Default model works"}}]}\\n\\ndata: [DONE]\\n\\n', {
+      status: 200, headers: { "content-type": "text/event-stream" }
+    });
+  };
+  try {
+    const chunks = [];
+    for await (const chunk of streamProviderResponse("openai", "provider-test-key-123", undefined, "hello")) chunks.push(chunk);
+    assert.deepEqual(chunks, ["Default model works"]);
+    assert.equal(captured.body.model, "gpt-4.1-mini");
+  } finally { globalThis.fetch = originalFetch; }
+});
