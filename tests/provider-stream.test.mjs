@@ -99,7 +99,7 @@ test("stream adapter exposes sanitized provider diagnostics without leaking cred
     await assert.rejects(async () => {
       for await (const _chunk of streamProviderResponse("openai", "provider-test-key-123", "model-test", "hello")) {}
     }, error => {
-      assert.match(error.message, /HTTP 400: Rejected key \\[redacted\\]/);
+      assert.ok(error.message.includes("HTTP 400: Rejected key [redacted]"));
       assert.doesNotMatch(error.message, new RegExp(echoedCredential));
       return true;
     });
