@@ -61,7 +61,7 @@ The worker requires:
 
 The service rechecks each HTTP(S) request and redirect, permits GET/HEAD only, blocks WebSockets and downloads, uses a fresh browser context per job and applies per-user request quotas. The application DNS check is defense in depth; it does not replace the egress proxy's DNS-rebinding and destination-IP enforcement.
 
-The browser worker is not yet exposed as an agent tool in this first infrastructure increment. Agent integration will execute it outside PostgreSQL row-lock transactions and require explicit approval for outbound browsing.
+The browser worker is exposed through the allowlisted `browser.open` agent tool. The planner must request an evidence-driven continuation after browsing, and approval is derived from the server-side registry. The durable agent worker calls the browser service outside PostgreSQL row-lock transactions; before persisting the result it reacquires the task row and rechecks status, lease token, expiry, approval and execution cursor. Browser page content is untrusted evidence, never executable instructions.
 
 ## Free-tier mode
 Support chat-only operation without workers or sandbox infrastructure. Free tiers can sleep, throttle or reject long-running workloads; do not promise permanent 24/7 execution.
