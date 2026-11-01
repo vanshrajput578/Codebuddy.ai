@@ -25,7 +25,8 @@ export function validateWorkspacePath(value) {
   const segments = value.split("/");
   if (segments.length > 12 || segments.some(part =>
     !part || part === "." || part === ".." || part.length > 80 ||
-    /[<>:"|?*\x00-\x1f]/.test(part) || part.endsWith(".") || part.endsWith(" ")
+    /[<>:"|?*\x00-\x1f]/.test(part) || part.endsWith(".") || part.endsWith(" ") ||
+    /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(part)
   )) {
     throw new Error("Workspace path contains an unsafe segment.");
   }
