@@ -61,7 +61,11 @@ test("static frontend is served by the same-origin backend", async () => {
   const response = await fetch(baseUrl);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") || "", /text\/html/);
-  assert.match(await response.text(), /Sign in to NEXUS/);
+  const html = await response.text();
+  assert.match(html, /Sign in to NEXUS/);
+  assert.match(html, /id="providerSettings"/);
+  assert.match(html, /data-view="settings"/);
+  assert.match(html, /Conversations are saved to your account/);
   assert.ok(response.headers.get("content-security-policy"));
 });
 
