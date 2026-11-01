@@ -413,19 +413,20 @@ if (!process.env.DATABASE_URL) {
         assert.equal(heartbeatHealth.activeTaskId, null, "worker health must clear the active task after completion");
 
         const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
-        const childSource = [
-          'import { startAgentWorker } from "./agent/worker-queue.mjs";',
-          'import pg from "pg";',
-          'const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });',
-          'startAgentWorker({ pool, workerId: "hard-kill-worker", pollIntervalMs: 10, leaseMs: 5000, executeTask: async () => new Promise(() => {}) });'
-        ].join("\n");
-        const child = spawn(process.execPath, ["--input-type=module", "-e", childSource], { cwd: process.cwd(), env: process.env, stdio: "ignore" });
+        const child = spawn(process.execPath, ["tests/fixtures/worker-hold.mjs"], {
+          cwd: process.cwd(), env: process.env, stdio: "ignore"
+        });
         let childClaimed = false;
         for (let attempt = 0; attempt < 100; attempt += 1) {
           const lease = await pool.query("SELECT lease_owner FROM agent_tasks WHERE id=$1", [crashTask.rows[0].id]);
           if (lease.rows[0]?.lease_owner === "hard-kill-worker") { childClaimed = true; break; }
           if (child.exitCode !== null) break;
           await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        if (!childClaimed) {
+          const failedChildExit = new Promise(resolve => child.once("exit", resolve));
+          child.kill("SIGKILL");
+          await failedChildExit;
         }
         assert.equal(childClaimed, true, "subprocess worker must claim the test task");
         const childExit = new Promise(resolve => child.once("exit", resolve));
