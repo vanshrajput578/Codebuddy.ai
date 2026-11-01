@@ -1044,6 +1044,7 @@ app.post("/api/chat/stream", noStore, sameOriginOnly, dbRequired, chatLimiter, r
   const requestId = randomUUID();
   const abortController = new AbortController();
   req.once("aborted", () => abortController.abort());
+  res.once("close", () => { if (!res.writableEnded) abortController.abort(); });
   let selectedProvider, modelName, conversationId = requestedConversationId, output = "", outcome = "error", errorCode = "provider_error";
   try {
     const active = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
