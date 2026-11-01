@@ -27,7 +27,7 @@ class NexusApi(context: Context) {
         val uri = runCatching { java.net.URI(value) }.getOrNull() ?: return false
         return uri.host != null && uri.rawPath.orEmpty().let { it.isEmpty() || it == "/" } &&
             uri.rawQuery == null && uri.rawFragment == null &&
-            (uri.scheme == "https" || (BuildConfig.DEBUG && uri.scheme == "http" && uri.host in setOf("10.0.2.2", "localhost")))
+            uri.scheme == "https"
     }
 
     @Synchronized fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject {
@@ -64,8 +64,13 @@ class NexusApi(context: Context) {
         if (!conversationId.isNullOrBlank()) payload.put("conversationId", conversationId)
         return request("/api/chat", "POST", payload)
     }
+    fun conversations(): JSONArray = request("/api/conversations").optJSONArray("conversations") ?: JSONArray()
+    fun conversationMessages(id: String): JSONArray = request("/api/conversations/$id/messages").optJSONArray("messages") ?: JSONArray()
     fun tasks(): JSONArray = request("/api/agent/tasks").optJSONArray("tasks") ?: JSONArray()
     fun task(id: String): JSONObject = request("/api/agent/tasks/$id")
+    fun createTask(title: String, prompt: String): JSONObject =
+        request("/api/agent/tasks", "POST", JSONObject().put("title", title).put("prompt", prompt))
+    fun planTask(id: String): JSONObject = request("/api/agent/tasks/$id/plan", "POST", JSONObject())
     fun taskAction(id: String, action: String): JSONObject {
         require(action in setOf("approve", "reject", "pause", "resume", "cancel"))
         return request("/api/agent/tasks/$id/$action", "POST", JSONObject())
