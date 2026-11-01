@@ -8,7 +8,7 @@ function messagesFor(history, prompt) {
 }
 
 async function* readSse(response, extract, signal) {
-  if (!response.ok) throw new Error("Provider request failed.");
+  if (!response.ok) throw new Error(`Provider request failed (HTTP ${response.status}).`);
   if (!response.body) throw new Error("Provider returned no stream.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
