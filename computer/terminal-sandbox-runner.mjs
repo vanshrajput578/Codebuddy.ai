@@ -145,13 +145,13 @@ async function readInput() {
 }
 
 async function runCommand(command, timeoutMs) {
-  let stdout = "";
-  let stderr = "";
+  const stdoutChunks = [];
+  const stderrChunks = [];
   let stdoutBytes = 0;
   let stderrBytes = 0;
   let outputTruncated = false;
   let timedOut = false;
-  const child = spawn("/bin/sh", ["-lc", command], {
+  const child = spawn("/bin/bash", ["-lc", command], {
     cwd: WORKSPACE,
     env: {
       HOME: "/tmp",
@@ -164,29 +164,48 @@ async function runCommand(command, timeoutMs) {
     windowsHide: true,
     detached: process.platform !== "win32"
   });
-  const append = (current, chunk, currentBytes) => {
+  const killProcessGroup = () => {
+    try {
+      if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+      else child.kill("SIGKILL");
+    } catch { child.kill("SIGKILL"); }
+  };
+  const append = (chunks, chunk, currentBytes) => {
     const bytes = Buffer.from(chunk);
     const room = Math.max(0, MAX_OUTPUT_BYTES - currentBytes);
     const take = bytes.subarray(0, room);
-    return { text: current + take.toString("utf8"), bytes: currentBytes + take.length, truncated: take.length < bytes.length };
+    if (take.length) chunks.push(take);
+    return { bytes: currentBytes + take.length, truncated: take.length < bytes.length };
   };
   child.stdout.on("data", chunk => {
-    const result = append(stdout, chunk, stdoutBytes);
-    stdout = result.text; stdoutBytes = result.bytes; outputTruncated ||= result.truncated;
+    const result = append(stdoutChunks, chunk, stdoutBytes);
+    stdoutBytes = result.bytes;
+    outputTruncated ||= result.truncated;
   });
   child.stderr.on("data", chunk => {
-    const result = append(stderr, chunk, stderrBytes);
-    stderr = result.text; stderrBytes = result.bytes; outputTruncated ||= result.truncated;
+    const result = append(stderrChunks, chunk, stderrBytes);
+    stderrBytes = result.bytes;
+    outputTruncated ||= result.truncated;
   });
   const timer = setTimeout(() => {
     timedOut = true;
-    try { if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch { child.kill("SIGKILL"); }
+    killProcessGroup();
   }, timeoutMs);
   const exitCode = await new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", code => resolve(Number.isInteger(code) ? code : 128));
-  }).finally(() => clearTimeout(timer));
-  return { exitCode, stdout, stderr, timedOut, outputTruncated };
+  }).finally(() => {
+    clearTimeout(timer);
+    // Kill any detached descendants that outlived the shell command.
+    killProcessGroup();
+  });
+  return {
+    exitCode,
+    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+    stderr: Buffer.concat(stderrChunks).toString("utf8"),
+    timedOut,
+    outputTruncated
+  };
 }
 
 async function main() {
