@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { pool, runAgentTask } from "../server.mjs";
+import { pool, runAgentTask, planScheduledAgentTask } from "../server.mjs";
 import { startAgentWorker } from "./worker-queue.mjs";
 import { startAgentScheduler } from "./automation-scheduler.mjs";
 
@@ -16,6 +16,7 @@ const worker = startAgentWorker({
 
 const scheduler = startAgentScheduler({
   pool,
+  planTask: planScheduledAgentTask,
   intervalMs: Number(process.env.AGENT_SCHEDULER_INTERVAL_MS || 15_000),
   batchSize: 10,
   onError: error => console.error("[nexus-scheduler]", error?.message || error)
