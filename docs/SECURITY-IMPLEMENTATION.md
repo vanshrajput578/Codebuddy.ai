@@ -25,6 +25,19 @@
 6. Run `npm install`, then `npm run check && npm test`.
 7. Run `npm run dev` and open `http://localhost:4000`.
 
+## Phase 6 isolated browser worker
+
+The first computer-tools increment adds a dedicated Playwright worker in `computer/`:
+- Internal `POST /execute` requires a constant-time compared bearer token (32+ bytes); `GET /health` reports only idle/busy state.
+- The request accepts only a UUID user ID and an HTTP(S) URL. Credentials in URLs, non-standard ports, local names and private/reserved IP literals are rejected.
+- Hostnames are resolved and all returned addresses are checked; every browser HTTP request and redirect is checked again.
+- Chromium is launched with a required egress proxy. The proxy and container network must block direct egress and deny private, loopback, link-local, reserved and cloud-metadata IP ranges after DNS resolution. The application DNS check alone cannot prevent DNS rebinding at the final network connection.
+- Only GET/HEAD requests are allowed. WebSockets and downloads are blocked; service workers are disabled; contexts are ephemeral and closed after each task.
+- Navigation is capped at 12 seconds, 40 browser requests and 12,000 characters of extracted text. Each user is limited to six jobs per minute, and the worker runs one job at a time.
+- `computer/Dockerfile` runs as an unprivileged user. Deploy with a read-only root filesystem, bounded tmpfs, memory/CPU/PID limits, no-new-privileges, no host mounts and no application/provider secrets in the container.
+
+Build with `docker build -f computer/Dockerfile -t nexus-browser-worker .`. Start it only on a private container network and set `BROWSER_WORKER_TOKEN` and `BROWSER_EGRESS_PROXY`. Do not publish port 4002 to the public internet. This infrastructure increment is not yet wired into the agent planner; the next increment adds the approval-gated `browser.open` tool and runs it outside database transactions.
+
 ## Remaining production requirements
 
 Email verification, password reset, account deletion, per-user AI quotas, managed KMS/envelope encryption, key rotation, database backups/restore tests, monitoring and independent security review are not complete. Agent execution, Android and isolated computer-use workers are also not implemented.
