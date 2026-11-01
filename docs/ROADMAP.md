@@ -94,12 +94,20 @@ A passing CI run is evidence for the tests it executes, not proof that unimpleme
 
 ## Current truth
 
-The repository currently has a same-origin web client, account/session APIs, PostgreSQL-backed conversations, per-user encrypted provider credentials, server-side Gemini/OpenAI/OpenRouter/Anthropic adapters, user-scoped memory CRUD and a durable task queue/event/cancellation foundation. Chat history is passed to the selected adapter as bounded context. Provider credentials are encrypted using AES-256-GCM with authenticated data bound to the user and provider.
+The repository has a same-origin web client, account/session APIs, PostgreSQL-backed conversations, per-user encrypted provider credentials, server-side Gemini/OpenAI/OpenRouter/Anthropic adapters, user-scoped memory CRUD, and a bounded approval-gated agent task runner. The task UI supports plan review, approve/reject, pause/resume/cancel, event history and result inspection.
+
+The agent planner accepts provider-generated JSON plans with a maximum of five steps. Server-side validation allows only:
+- `memory.search`: read-only access to the authenticated user's saved memories.
+- `memory.save`: writes to the authenticated user's memory and is marked approval-required.
+- `response.compose`: bounded response output.
+
+Every plan requires explicit user approval before execution. Each tool result and task event is persisted. The executor checks state between steps. Tasks interrupted by a server restart are moved to paused and require explicit resume. Arbitrary shell, browser, HTTP, filesystem and device-control tools are not implemented.
 
 GitHub Actions provisions PostgreSQL 16 and runs:
 - JavaScript syntax checks for server, frontend and test files.
-- PostgreSQL integration coverage for registration, login, CSRF, per-user credential isolation, ciphertext encryption/tamper detection, provider selection, mocked provider connection/chat, history context, conversation ownership and logout.
-- Security regression checks for origin enforcement, fail-closed behaviour and frontend delivery.
+- PostgreSQL integration coverage for registration/login, CSRF, per-user credential isolation, encryption/tamper detection, provider selection, mocked OpenAI connection/chat and bounded history context.
+- Agent tests for strict plan validation, no tool execution before approval, approved memory search/save/response execution, per-user access, rejection, pause/resume, restart recovery and invalid-tool rejection.
+- Security regression tests for origin enforcement, fail-closed behaviour and frontend delivery.
 - Gitleaks secret scanning.
 
-Latest verified code commit: `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`. The backend workflow passed on commit `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`: 8 top-level Node tests, 0 failures, 0 skipped. The PostgreSQL integration test provisions a real PostgreSQL 16 CI service and exercises account/session, provider vault encryption/tamper detection, mocked OpenAI connection/chat, history context, per-user memory CRUD/isolation, durable task creation/events/cancellation and cross-user access controls. The secret scan also passed. Later commits in the branch are documentation-only. Real provider credentials and endpoints have not been tested. Phase 3 streaming/capability registry remains incomplete. Phase 4 now has a bounded and approval-gated runtime with a task UI. It is not a general-purpose computer-use agent: external browser, terminal, file and device tools remain deliberately unavailable. Phases 5–7 are not implemented. Phase 8 is only a partial security baseline; production deployment, backups, monitoring, quotas and independent review remain outstanding.
+Latest backend-verified code commit: `fe56c99f82efb09420f5d7f2e00a1b87beb50245`. Its GitHub Actions backend workflow passed 8 top-level tests with 0 failures and 0 skipped; the PostgreSQL integration suite exercised the Phase 4 agent flows. The secret scan passed. Later commits updated documentation only. Real third-party provider credentials/endpoints, browser/device visual QA and production deployment have not been tested. Phase 3 streaming/capability registry remains incomplete. Phases 5–7 are not implemented. Phase 8 remains a partial security baseline; deployment, backups, monitoring, quotas and independent security review are outstanding.
