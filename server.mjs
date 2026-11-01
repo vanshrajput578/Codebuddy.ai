@@ -653,7 +653,7 @@ async function runAgentTask(taskId, userId) {
         }
         await new Promise(resolve => setTimeout(resolve, 30));
       } catch (error) {
-        await client.query("ROLLBACK").catch(() => {});
+        if (!clientReleased) await client.query("ROLLBACK").catch(() => {});
         const failure = await pool.connect();
         try {
           await failure.query("BEGIN");
