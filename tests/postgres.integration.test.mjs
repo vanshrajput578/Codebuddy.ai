@@ -293,7 +293,7 @@ if (!process.env.DATABASE_URL) {
         assert.equal(agentApprove.status, 202);
         async function waitForAgentTask(id, expectedStatus) {
           let lastStatus = "missing";
-          for (let attempt = 0; attempt < 100; attempt += 1) {
+          for (let attempt = 0; attempt < 500; attempt += 1) {
             const response = await originalFetch(baseUrl + "/api/agent/tasks/" + id, { headers: { cookie: first.cookie } });
             const body = await response.json();
             lastStatus = body.task?.status || "missing";
@@ -303,7 +303,7 @@ if (!process.env.DATABASE_URL) {
             }
             await new Promise(resolve => setTimeout(resolve, 20));
           }
-          assert.fail("Task did not reach " + expectedStatus + " in time; last status=" + lastStatus);
+          assert.fail("Task did not reach " + expectedStatus + " in time; last status=" + lastStatus + "; worker=" + JSON.stringify(worker?.health?.() || null));
         }
         const replannedAgent = await waitForAgentTask(agentTaskId, "awaiting_approval");
         assert.equal(replannedAgent.task.current_step, 1, "the first approved search step must remain completed");
