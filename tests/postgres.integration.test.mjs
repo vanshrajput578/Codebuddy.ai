@@ -258,6 +258,31 @@ if (!process.env.DATABASE_URL) {
         });
         assert.equal(secondChat.status, 200, await secondChat.text());
         assert.ok(capturedProviderRequest.body.messages.some(item => item.content.includes("blue comet.")), "chat history must be sent as provider context");
+        const originalStreamFetch = globalThis.fetch;
+        globalThis.fetch = async (input, options = {}) => {
+          if (String(input) === "https://api.openai.com/v1/chat/completions" && JSON.parse(options.body || "{}").stream === true) {
+            return new Response('data: {"choices":[{"delta":{"content":"Streamed "}}]}\\r\\n\\r\\ndata: {"choices":[{"delta":{"content":"answer"}}]}\\r\\n\\r\\ndata: [DONE]\\r\\n\\r\\n', { status: 200, headers: { "content-type": "text/event-stream" } });
+          }
+          return originalStreamFetch(input, options);
+        };
+        try {
+          const streamed = await originalFetch(baseUrl + "/api/chat/stream", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+            body: JSON.stringify({ message: "Test streaming chat", conversationId: chatConversationId })
+          });
+          const streamedText = await streamed.text();
+          assert.equal(streamed.status, 200, streamedText);
+          assert.match(streamedText, /event: delta/);
+          assert.match(streamedText, /Streamed /);
+          assert.match(streamedText, /event: done/);
+          const usage = await originalFetch(baseUrl + "/api/providers/usage", { headers: { cookie: first.cookie } });
+          assert.equal(usage.status, 200);
+          const usageBody = await usage.json();
+          assert.equal(usageBody.windowDays, 30);
+          assert.ok(usageBody.usage.some(item => item.provider === "openai" && item.requests >= 1));
+        } finally { globalThis.fetch = originalStreamFetch; }
+
 
         const agentCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
