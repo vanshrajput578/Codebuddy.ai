@@ -11,7 +11,7 @@ if (!process.env.DATABASE_URL) {
   process.env.APP_ORIGIN = "http://127.0.0.1:43127";
   process.env.CREDENTIAL_ENCRYPTION_KEY = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=";
 
-  const { app, pool, runAgentTask } = await import("../server.mjs");
+  const { app, pool, runAgentTask, planScheduledAgentTask } = await import("../server.mjs");
   const { startAgentWorker, claimNextAgentTask, releaseAgentTaskLease } = await import("../agent/worker-queue.mjs");
   const { processDueAgentSchedules } = await import("../agent/automation-scheduler.mjs");
   const origin = process.env.APP_ORIGIN;
@@ -660,10 +660,39 @@ if (!process.env.DATABASE_URL) {
         "INSERT INTO agent_schedules (user_id,title,prompt,agent_profile,timezone,next_run_at) VALUES ($1,$2,$3,'researcher','Asia/Kolkata',$4) RETURNING id",
         [first.user.id, "Daily public research", "Summarize the latest saved research topic.", runAt]
       );
-      const scheduledTasks = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10 });
+      const originalScheduledFetch = globalThis.fetch;
+      globalThis.fetch = async (url, options) => {
+        assert.match(String(url), /api\.openai\.com\/v1\/chat\/completions/);
+        assert.equal(options.method, "POST");
+        const plan = {
+          steps: [{
+            title: "Review scheduled task",
+            description: "Prepare a concise result for user review.",
+            tool: "response.compose",
+            input: { text: "Scheduled work is prepared for approval." }
+          }]
+        };
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(plan) } }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      };
+      let scheduledTasks;
+      let recurringTasks;
+      try {
+        scheduledTasks = await processDueAgentSchedules(pool, {
+          now: new Date(), batchSize: 10, planTask: planScheduledAgentTask
+        });
+        recurringTasks = await processDueAgentSchedules(pool, {
+          now: new Date(), batchSize: 10, planTask: planScheduledAgentTask
+        });
+      } finally {
+        globalThis.fetch = originalScheduledFetch;
+      }
       assert.equal(scheduledTasks.length, 1, "a due one-shot schedule should enqueue exactly one task");
+      assert.equal(scheduledTasks[0].planStatus, "awaiting_approval", "scheduled plan must be generated but not executed");
       assert.equal(scheduledTasks[0].scheduleId, oneShot.rows[0].id);
-      const duplicateSchedulePass = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10 });
+      const duplicateSchedulePass = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10, planTask: planScheduledAgentTask });
       assert.equal(duplicateSchedulePass.length, 0, "a one-shot schedule must not enqueue twice");
       const oneShotState = await pool.query(
         "SELECT enabled,last_run_at FROM agent_schedules WHERE id=$1 AND user_id=$2",
@@ -677,12 +706,22 @@ if (!process.env.DATABASE_URL) {
       );
       assert.equal(scheduleRun.rowCount, 1);
       assert.equal(scheduleRun.rows[0].task_id, scheduledTasks[0].taskId);
+      const scheduledTask = await pool.query(
+        "SELECT status,plan,current_step,approved_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
+        [scheduledTasks[0].taskId, first.user.id]
+      );
+      assert.equal(scheduledTask.rows[0].status, "awaiting_approval");
+      assert.equal(scheduledTask.rows[0].current_step, 0);
+      assert.equal(scheduledTask.rows[0].approved_at, null, "scheduled task must not have approval pre-granted");
+      assert.equal(scheduledTask.rows[0].plan.steps[0].tool, "response.compose");
 
       const inbox = await fetch(baseUrl + "/api/notifications", { headers: { cookie: first.cookie } });
       const inboxBody = await inbox.json();
       assert.equal(inbox.status, 200, JSON.stringify(inboxBody));
       const scheduleNotification = inboxBody.notifications.find(item => item.schedule_id === oneShot.rows[0].id);
       assert.ok(scheduleNotification, "scheduled workflow should create a private inbox notification");
+      assert.equal(scheduleNotification.notification_type, "task.awaiting_approval");
+      assert.match(scheduleNotification.body, /approve it before execution/i);
       const foreignInbox = await fetch(baseUrl + "/api/notifications", { headers: { cookie: second.cookie } });
       assert.equal((await foreignInbox.json()).notifications.length, 0, "notifications must be scoped to their owner");
       const markRead = await fetch(baseUrl + `/api/notifications/${scheduleNotification.id}/read`, {
@@ -699,8 +738,9 @@ if (!process.env.DATABASE_URL) {
         "INSERT INTO agent_schedules (user_id,title,prompt,agent_profile,interval_minutes,timezone,next_run_at) VALUES ($1,$2,$3,'general',15,'Asia/Kolkata',$4) RETURNING id",
         [first.user.id, "Project status check", "Review the current project status.", recurringAt]
       );
-      const recurringTasks = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10 });
       assert.equal(recurringTasks.length, 1);
+      assert.equal(recurringTasks[0].planStatus, "awaiting_approval");
+      assert.notEqual(recurringTasks[0].taskId, scheduledTasks[0].taskId);
       const recurringState = await pool.query(
         "SELECT enabled,next_run_at,last_run_at FROM agent_schedules WHERE id=$1 AND user_id=$2",
         [recurring.rows[0].id, first.user.id]
