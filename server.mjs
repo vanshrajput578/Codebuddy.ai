@@ -466,7 +466,15 @@ function parseAgentPlan(raw) {
   return { steps, maxSteps: maxAgentSteps };
 }
 function safeAgentPlan(plan) {
-  return parseAgentPlan(JSON.stringify(plan));
+  const validated = parseAgentPlan(JSON.stringify(plan));
+  return {
+    ...validated,
+    steps: validated.steps.map((step, index) => ({
+      ...step,
+      status: plan.steps[index]?.status === "completed" ? "completed" : "pending",
+      ...(plan.steps[index]?.result ? { result: plan.steps[index].result } : {})
+    }))
+  };
 }
 async function appendTaskEvent(client, taskId, eventType, payload = {}) {
   await client.query(
@@ -536,6 +544,7 @@ async function runAgentTask(taskId, userId) {
           result: JSON.stringify(result).slice(0, 1200)
         });
         await client.query("COMMIT");
+        await new Promise(resolve => setTimeout(resolve, 30));
       } catch (error) {
         await client.query("ROLLBACK").catch(() => {});
         const failure = await pool.connect();
@@ -559,6 +568,8 @@ async function runAgentTask(taskId, userId) {
     }
   } finally {
     activeAgentTasks.delete(taskId);
+    const current = await pool.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [taskId, userId]).catch(() => ({ rows: [] }));
+    if (current.rows[0]?.status === "running") setImmediate(() => runAgentTask(taskId, userId));
   }
 }
 
@@ -827,7 +838,7 @@ app.post("/api/agent/tasks/:id/resume", noStore, sameOriginOnly, dbRequired, req
   try {
     await client.query("BEGIN");
     const updated = await client.query(
-      "UPDATE agent_tasks SET status='running',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='paused' RETURNING id,status",
+      "UPDATE agent_tasks SET status='running',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='paused' AND approved_at IS NOT NULL RETURNING id,status",
       [req.params.id, req.auth.id]
     );
     if (!updated.rowCount) {
@@ -995,6 +1006,19 @@ app.use((err, _req, res, _next) => {
 });
 
 if (process.env.NODE_ENV !== "test" && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  app.listen(port, () => console.log(`NEXUS API listening on port ${port}`));
+  app.listen(port, () => {
+    console.log(`NEXUS API listening on port ${port}`);
+    if (pool) {
+      pool.query("UPDATE agent_tasks SET status='paused',updated_at=now() WHERE status='running' RETURNING id")
+        .then(async result => {
+          for (const row of result.rows) {
+            await pool.query(
+              "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.recovered_paused',$2::jsonb)",
+              [row.id, JSON.stringify({ reason: "Server restarted; explicit resume required." })]
+            );
+          }
+        }).catch(() => {});
+    }
+  });
 }
 export { app, pool };
