@@ -845,6 +845,15 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
   if (!prompt || prompt.length > 8000 || titleInput.length > 120) {
     return res.status(400).json({ error: "Task prompt must contain 1–8000 characters; title is limited to 120." });
   }
+  let workspaceFiles;
+  try {
+    workspaceFiles = validateAgentToolInput("terminal.run", {
+      command: "Upload task workspace files",
+      files: req.body?.files ?? []
+    }).files;
+  } catch (error) {
+    return res.status(400).json({ error: String(error?.message || "Invalid workspace files.").slice(0, 240) });
+  }
   const title = titleInput || prompt.replace(/\s+/g, " ").slice(0, 120);
   const client = await pool.connect();
   try {
@@ -853,9 +862,24 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
       "INSERT INTO agent_tasks (user_id,title,prompt,status) VALUES ($1,$2,$3,'queued') RETURNING id,title,prompt,status,plan,current_step,created_at,updated_at",
       [req.auth.id, title, prompt]
     );
-    await appendTaskEvent(client, created.rows[0].id, "task.created", { status: "queued" });
+    let uploadedBytes = 0;
+    for (const file of workspaceFiles) {
+      const encrypted = encryptTaskFile(req.auth.id, created.rows[0].id, file);
+      uploadedBytes += encrypted.sizeBytes;
+      await client.query(
+        `INSERT INTO agent_task_files (task_id,user_id,path,ciphertext,iv,auth_tag,size_bytes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [created.rows[0].id, req.auth.id, file.path, encrypted.ciphertext, encrypted.iv, encrypted.authTag, encrypted.sizeBytes]
+      );
+    }
+    await appendTaskEvent(client, created.rows[0].id, "task.created", {
+      status: "queued", uploadedFiles: workspaceFiles.length, uploadedBytes
+    });
     await client.query("COMMIT");
-    return res.status(201).json({ task: created.rows[0] });
+    return res.status(201).json({
+      task: created.rows[0],
+      workspace: { fileCount: workspaceFiles.length, totalBytes: uploadedBytes }
+    });
   } catch {
     await client.query("ROLLBACK").catch(() => {});
     return res.status(503).json({ error: "Could not create durable task." });
