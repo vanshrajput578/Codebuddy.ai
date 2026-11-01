@@ -66,3 +66,13 @@ Support chat-only operation without workers or sandbox infrastructure. Free tier
 - Secret redaction in logs.
 - Audit events for tools and approvals.
 - Explicit confirmation for purchases, publishing, messaging and destructive changes.
+
+
+## Agent runtime safety boundary
+
+The Phase 4 agent runner accepts provider-generated JSON plans with at most five steps. Server validation discards model-supplied approval flags and derives permissions from a fixed tool registry:
+- `memory.search`: read-only query restricted to the authenticated user's memory rows.
+- `memory.save`: writes only to the authenticated user's memory and is marked approval-required.
+- `response.compose`: returns bounded text and has no external side effects.
+
+All plans remain in `awaiting_approval` until the user approves. The runner persists each step result and event in PostgreSQL, checks task status between steps, and supports pause, resume, reject and cancel. On server restart, any task left in `running` is changed to `paused` and requires explicit resume. No shell, arbitrary HTTP, browser, file-system or device-control tools are exposed.
