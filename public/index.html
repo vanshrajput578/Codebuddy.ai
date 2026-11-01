@@ -75,6 +75,13 @@
   <div class="agent-safety"><b>Computer tools safety</b><span>Public browsing is read-only. Terminal commands require approval and run in a disposable no-network container. Uploaded files are encrypted at rest and private to this task.</span></div>
   <form id="agentTaskForm" class="agent-task-form">
     <label class="auth-field">Task title <span class="muted-optional">(optional)</span><input id="agentTaskTitle" maxlength="120" placeholder="e.g. Organize my project notes"></label>
+    <label class="auth-field">Specialist agent<select id="agentProfile">
+      <option value="general">General Assistant</option>
+      <option value="researcher">Research Specialist</option>
+      <option value="developer">Development Specialist</option>
+      <option value="reviewer">Code & Evidence Reviewer</option>
+    </select></label>
+    <p class="agent-profile-description" id="agentProfileDescription">A balanced assistant for planning and completing mixed tasks.</p>
     <label class="auth-field">What should NEXUS do?<textarea id="agentTaskPrompt" rows="4" maxlength="8000" required placeholder="Describe the task and the outcome you want..."></textarea></label>
     <label class="auth-field">Attach project files<input id="agentTaskFiles" type="file" multiple><small class="file-help">Up to 30 files · 256 KiB each · 1 MiB total. Files are encrypted before database storage.</small></label>
     <label class="auth-field">Or attach a project folder<input id="agentTaskFolder" type="file" webkitdirectory directory multiple><small class="file-help">Folder structure is preserved inside the private task workspace.</small></label>
