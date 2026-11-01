@@ -55,7 +55,10 @@ Support chat-only operation without workers or sandbox infrastructure. Free tier
 
 ## Security
 - Server-side authorization on every resource.
-- Password hashing using scrypt and opaque server-side sessions.\n- HttpOnly, SameSite=Strict cookies with Secure in production.\n- CSRF validation on authenticated state-changing endpoints.\n- Require authentication before provider calls.
+- Password hashing using scrypt and opaque server-side sessions.
+- HttpOnly, SameSite=Strict cookies with Secure in production.
+- CSRF validation on authenticated state-changing endpoints.
+- Require authentication before provider calls.
 - CSRF protection where cookie sessions are used.
 - Rate limits and request validation.
 - SSRF protection for URL tools.
