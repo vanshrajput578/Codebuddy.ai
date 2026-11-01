@@ -74,7 +74,7 @@ docker run -d --name nexus-browser-worker \
   nexus-browser-worker
 ```
 
-The example assumes `nexus-internal` and an egress proxy already exist. Enforce an egress firewall so the browser container can connect only to that proxy; the proxy must deny unsafe destination IPs after DNS resolution. Do not use an unrestricted forward proxy.
+The example assumes `nexus-internal` and an egress proxy already exist. Enforce an egress firewall so the browser container can connect only to that proxy; the proxy must deny unsafe destination IPs after DNS resolution. Do not use an unrestricted forward proxy. Set `BROWSER_WORKER_URL=http://nexus-browser-worker:4002` in the durable agent worker environment on the same private network.
 
 The agent tool registry now exposes `browser.open`. The planner must mark it for evidence-driven replanning, and the server derives its approval requirement from the registry. The worker calls the browser service outside PostgreSQL transactions, then reacquires the task row and verifies the lease, status and cursor before saving page evidence. The Agent Tasks screen shows the approval-required step in the normal plan review flow. Configure `BROWSER_WORKER_URL` on the durable agent worker to reach the private browser service.
 
