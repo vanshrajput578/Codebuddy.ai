@@ -93,4 +93,13 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 A passing CI run is evidence for the tests it executes, not proof that unimplemented phases work. Phase completion requires each phase's stated acceptance criteria to pass.
 
 ## Current truth
-Account registration/login, PostgreSQL-backed sessions, CSRF checks and authenticated server-side Gemini chat are now implemented in the repository. Conversations and messages are saved per user; the UI can reopen recent conversations and Gemini receives the latest 12 messages as context. The backend now includes an encrypted per-user provider vault and server-side Gemini, OpenAI, OpenRouter and Anthropic adapters. Remaining work includes live PostgreSQL integration tests, per-user AI quotas, account recovery/email verification, agent runtime, Android client, isolated sandbox and a production security review. GitHub Actions now provisions PostgreSQL and runs account/provider/conversation integration tests plus isolated security regression tests. The current workflow verifies mocked provider routing, not live provider credentials. Android, agent tools, computer-use sandbox and production deployment remain unimplemented.
+
+The repository currently has a responsive same-origin web client, account/session APIs, PostgreSQL-backed conversations, per-user encrypted provider credentials and server-side Gemini/OpenAI/OpenRouter/Anthropic adapters. Chat history is passed to the selected adapter as bounded context. Provider credentials are encrypted using AES-256-GCM with authenticated data bound to the user and provider.
+
+GitHub Actions provisions PostgreSQL 16 and runs:
+- JavaScript syntax checks for server, frontend and test files.
+- PostgreSQL integration coverage for registration, login, CSRF, per-user credential isolation, ciphertext encryption/tamper detection, provider selection, mocked provider connection/chat, history context, conversation ownership and logout.
+- Security regression checks for origin enforcement, fail-closed behaviour and frontend delivery.
+- Gitleaks secret scanning.
+
+Latest verified code commit: `b9257df` (backend integration suite and tenant-bound encryption). The backend test workflow passed 8 tests with 0 failures; the secret scan passed. Later commits in the branch are documentation-only. Real provider credentials and endpoints have not been tested. Phase 3 streaming/capability registry remains incomplete. Phases 4–7 are not implemented. Phase 8 is only a partial security baseline; production deployment, backups, monitoring, quotas and independent review remain outstanding.
