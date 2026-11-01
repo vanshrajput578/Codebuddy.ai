@@ -14,3 +14,41 @@
 .files-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:760px;margin:24px 0 12px}.files-library-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 15px;margin:8px 0;border:1px solid var(--line);border-radius:10px;background:#101016}.files-library-details{min-width:0;display:grid;gap:5px}.files-library-details b{font-size:11px;overflow-wrap:anywhere}.files-library-details small{font-size:9px;color:var(--muted)}.files-library-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.files-library-actions button{white-space:nowrap}@media(max-width:600px){.files-library-row{align-items:flex-start;flex-direction:column}.files-library-actions{justify-content:flex-start}.files-toolbar{align-items:flex-start}}
 
 .agent-profile-description{max-width:700px;margin:-4px 0 14px;color:var(--muted);font-size:9px;line-height:1.7}.agent-profile-summary{margin:10px 0 14px;padding:9px 11px;border:1px solid #393149;border-radius:8px;background:#171420;color:#bcb2d3;font-size:9px;line-height:1.7;overflow-wrap:anywhere}.agent-task-row small{text-transform:none}
+
+
+.notification-anchor{position:relative}
+.notification-toggle{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;background:#14131b;color:#ddd;padding:7px 11px;font:500 10px 'DM Sans';cursor:pointer}
+.notification-toggle span{min-width:18px;height:18px;display:grid;place-items:center;border-radius:50%;background:#352a54;color:#d9c9ff;font-size:9px}
+.notification-panel{position:absolute;z-index:20;right:0;top:42px;width:min(360px,calc(100vw - 28px));max-height:440px;overflow:auto;border:1px solid #393344;border-radius:12px;background:#111018;box-shadow:0 18px 55px #0009;padding:13px}
+.notification-heading{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 10px;border-bottom:1px solid var(--line)}
+.notification-heading b{font:600 14px 'Space Grotesk'}
+.notification-heading button{border:0;background:transparent;color:#b9a7f4;font-size:10px;cursor:pointer}
+.notification-row{display:block;width:100%;padding:11px 9px;border:0;border-bottom:1px solid #282531;background:transparent;color:#e4e0eb;text-align:left;cursor:pointer}
+.notification-row.unread{background:#1b1726}
+.notification-row b,.notification-row small,.notification-row span{display:block}
+.notification-row b{font-size:11px}
+.notification-row span{font-size:10px;line-height:1.5;color:#aaa4b7;margin-top:5px}
+.notification-row small{font-size:9px;color:#777282;margin-top:6px}
+.automation-panel{margin-top:28px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#101016}
+.automation-panel>p{max-width:660px;margin:8px 0 14px}
+.schedule-form{display:grid;gap:4px;padding:17px;border:1px solid #302c3a;border-radius:10px;background:#13121a}
+.schedule-form textarea{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #34313f;border-radius:8px;background:#0b0b10;color:white;font:12px/1.6 'DM Sans';resize:vertical}
+.schedule-form select{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #34313f;border-radius:8px;background:#0b0b10;color:white;font:12px 'DM Sans'}
+.schedule-input-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.schedule-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;margin-top:9px;border:1px solid #302c3a;border-radius:9px;background:#14131b}
+.schedule-row-main{min-width:0;flex:1}
+.schedule-row-main b,.schedule-row-main span,.schedule-row-main small{display:block;overflow-wrap:anywhere}
+.schedule-row-main b{font-size:11px;color:#eee}
+.schedule-row-main span{font-size:10px;color:#aaa4b7;margin-top:5px}
+.schedule-row-main small{font-size:9px;color:#827d91;margin-top:5px}
+.schedule-row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.schedule-row-actions button{border:1px solid #4a405b;border-radius:7px;background:#211c2b;color:#ddd;padding:7px 9px;font-size:9px;cursor:pointer}
+.schedule-history{margin:5px 0 10px;padding:10px 12px;border-left:2px solid #63518d;background:#14121b}
+.schedule-history p{font-size:10px;line-height:1.6;color:#aaa4b7;margin:4px 0}
+@media(max-width:720px){
+  .top-actions{gap:8px}
+  .notification-toggle{padding:6px 8px;font-size:9px}
+  .schedule-input-grid{grid-template-columns:1fr}
+  .schedule-row{align-items:flex-start;flex-direction:column}
+  .schedule-row-actions{justify-content:flex-start}
+}
