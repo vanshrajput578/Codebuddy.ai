@@ -76,5 +76,21 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 - [ ] Security review.
 - [ ] Deployment runbooks.
 
+## Phase verification audit (2026-11-01)
+
+| Phase | Implementation status | Verification result |
+|---|---|---|
+| 0 — Repository foundation | Mostly implemented; license selection remains open. | Repository tree, documentation and CI workflows inspected; secret scan passes. |
+| 1 — Web foundation | Partial. Same-origin responsive HTML/CSS/JS UI and API are present; React/Next.js conversion and accessibility audit are not done. | Node syntax and static frontend/security tests pass. No browser/device visual QA was run. |
+| 2 — Backend and accounts | Core account/session/conversation APIs implemented. Email verification, password recovery, quotas and account deletion remain absent. | PostgreSQL CI integration covers registration/login, CSRF, provider ownership, conversation ownership, logout and persistence. |
+| 3 — AI providers and chat | Provider vault, selection and Gemini/OpenAI/OpenRouter/Anthropic adapters implemented. Model registry, streaming, usage reporting and provider retries remain incomplete. | CI mocks OpenAI responses and verifies key decryption, provider routing, chat persistence and bounded context. Real third-party API calls are not verified. |
+| 4 — Agent runtime and memory | Not implemented. | Not tested. |
+| 5 — Android | Not implemented. | No Android project, APK or device test exists. |
+| 6 — Computer tools | Not implemented. | No isolated browser/terminal worker or sandbox tests exist. |
+| 7 — Multi-agent and automations | Not implemented. | No delegation, scheduler or notification tests exist. |
+| 8 — Production hardening | Partial security baseline only. | CI and secret scanning pass; deployment, backups, monitoring, quotas and independent security review are not verified. |
+
+A passing CI run is evidence for the tests it executes, not proof that unimplemented phases work. Phase completion requires each phase's stated acceptance criteria to pass.
+
 ## Current truth
-Account registration/login, PostgreSQL-backed sessions, CSRF checks and authenticated server-side Gemini chat are now implemented in the repository. Conversations and messages are saved per user; the UI can reopen recent conversations and Gemini receives the latest 12 messages as context. The backend now includes an encrypted per-user provider vault and server-side Gemini, OpenAI, OpenRouter and Anthropic adapters. Remaining work includes live PostgreSQL integration tests, per-user AI quotas, account recovery/email verification, agent runtime, Android client, isolated sandbox and a production security review. The latest CI run before the PostgreSQL integration suite passed syntax/security tests only. The CI workflow now provisions PostgreSQL and runs end-to-end database tests. Live third-party provider calls, Android, agent tools, computer-use sandbox and production deployment remain unverified or unimplemented.
+Account registration/login, PostgreSQL-backed sessions, CSRF checks and authenticated server-side Gemini chat are now implemented in the repository. Conversations and messages are saved per user; the UI can reopen recent conversations and Gemini receives the latest 12 messages as context. The backend now includes an encrypted per-user provider vault and server-side Gemini, OpenAI, OpenRouter and Anthropic adapters. Remaining work includes live PostgreSQL integration tests, per-user AI quotas, account recovery/email verification, agent runtime, Android client, isolated sandbox and a production security review. GitHub Actions now provisions PostgreSQL and runs account/provider/conversation integration tests plus isolated security regression tests. The current workflow verifies mocked provider routing, not live provider credentials. Android, agent tools, computer-use sandbox and production deployment remain unimplemented.
