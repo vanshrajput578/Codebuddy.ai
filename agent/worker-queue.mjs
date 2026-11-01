@@ -24,24 +24,19 @@ export async function claimNextAgentTask(pool, workerId, leaseMs = DEFAULT_LEASE
         [task.id, JSON.stringify({ maxAttempts: MAX_WORKER_ATTEMPTS })]
       );
     }
-
     const claimed = await client.query(
       `WITH candidate AS (
-         SELECT id
-         FROM agent_tasks
-         WHERE status='running'
-           AND (lease_expires_at IS NULL OR lease_expires_at < now())
+         SELECT id FROM agent_tasks
+         WHERE status='running' AND (lease_expires_at IS NULL OR lease_expires_at < now())
            AND worker_attempts < $1
-         ORDER BY updated_at ASC, created_at ASC
-         FOR UPDATE SKIP LOCKED
-         LIMIT 1
+         ORDER BY updated_at ASC,created_at ASC
+         FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE agent_tasks AS task
        SET lease_owner=$2,lease_token=$3::uuid,
-           lease_expires_at=now() + ($4::text || ' milliseconds')::interval,
+           lease_expires_at=now()+($4::text || ' milliseconds')::interval,
            worker_attempts=worker_attempts+1,updated_at=now()
-       FROM candidate
-       WHERE task.id=candidate.id
+       FROM candidate WHERE task.id=candidate.id
        RETURNING task.id,task.user_id,task.lease_token,task.worker_attempts,task.lease_expires_at`,
       [MAX_WORKER_ATTEMPTS, workerId, leaseToken, leaseMs]
     );
@@ -50,16 +45,13 @@ export async function claimNextAgentTask(pool, workerId, leaseMs = DEFAULT_LEASE
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;
-  } finally {
-    client.release();
-  }
+  } finally { client.release(); }
 }
 
 export async function heartbeatAgentTask(pool, taskId, leaseToken, leaseMs = DEFAULT_LEASE_MS) {
   const result = await pool.query(
-    `UPDATE agent_tasks
-     SET lease_expires_at=now() + ($3::text || ' milliseconds')::interval
-     WHERE id=$1 AND lease_token=$2::uuid AND status='running'
+    `UPDATE agent_tasks SET lease_expires_at=now()+($3::text || ' milliseconds')::interval
+     WHERE id=$1 AND lease_token=$2::uuid AND status='running' AND lease_expires_at>now()
      RETURNING id`,
     [taskId, leaseToken, leaseMs]
   );
@@ -68,50 +60,90 @@ export async function heartbeatAgentTask(pool, taskId, leaseToken, leaseMs = DEF
 
 export async function releaseAgentTaskLease(pool, taskId, leaseToken) {
   const result = await pool.query(
-    `UPDATE agent_tasks
-     SET lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,updated_at=now()
-     WHERE id=$1 AND lease_token=$2::uuid
-     RETURNING id`,
+    `UPDATE agent_tasks SET lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,updated_at=now()
+     WHERE id=$1 AND lease_token=$2::uuid AND status='running' RETURNING id`,
     [taskId, leaseToken]
   );
   return result.rowCount === 1;
 }
 
-export function startAgentWorker({ pool, executeTask, workerId = randomUUID(), pollIntervalMs = 1_000, leaseMs = DEFAULT_LEASE_MS, onError = () => {} }) {
+export function startAgentWorker({
+  pool, executeTask, workerId = randomUUID(), pollIntervalMs = 1_000,
+  leaseMs = DEFAULT_LEASE_MS, onError = () => {}
+}) {
+  if (!pool || typeof pool.query !== "function" || typeof pool.connect !== "function") throw new Error("Worker database pool is required.");
   if (typeof executeTask !== "function") throw new Error("Worker executeTask callback is required.");
+  if (!Number.isInteger(pollIntervalMs) || pollIntervalMs < 10 || pollIntervalMs > 60_000) throw new Error("Poll interval must be between 10 and 60000 milliseconds.");
+  if (!Number.isInteger(leaseMs) || leaseMs < 5_000 || leaseMs > 300_000) throw new Error("Lease duration must be between 5 and 300 seconds.");
+
   let stopped = false;
   let active = false;
   let timer = null;
-
+  const stats = {
+    startedAt: new Date().toISOString(), lastPollAt: null, lastClaimAt: null,
+    lastHeartbeatAt: null, lastTaskFinishedAt: null, claims: 0,
+    heartbeatSuccesses: 0, heartbeatFailures: 0, taskExecutions: 0,
+    taskErrors: 0, activeTaskId: null, lastError: null
+  };
+  const reportError = error => {
+    stats.taskErrors += 1;
+    stats.lastError = { message: String(error?.message || error).slice(0, 300), at: new Date().toISOString() };
+    try { onError(error); } catch {}
+  };
   const wait = ms => new Promise(resolve => { timer = setTimeout(resolve, ms); });
 
   async function poll() {
     if (stopped || active) return;
     active = true;
+    stats.lastPollAt = new Date().toISOString();
     try {
       const task = await claimNextAgentTask(pool, workerId, leaseMs);
-      if (task) {
-        let leaseLost = false;
-        const heartbeat = setInterval(async () => {
-          try {
-            if (!await heartbeatAgentTask(pool, task.id, task.lease_token, leaseMs)) leaseLost = true;
-          } catch (error) {
-            leaseLost = true;
-            onError(error);
-          }
-        }, Math.max(1_000, Math.floor(leaseMs / 3)));
+      if (!task) return;
+      stats.claims += 1;
+      stats.lastClaimAt = new Date().toISOString();
+      stats.activeTaskId = task.id;
+      let leaseLost = false;
+      let heartbeatRunning = false;
+      let heartbeatTimer;
+      const heartbeatDelay = Math.max(1_000, Math.floor(leaseMs / 3));
+      const scheduleHeartbeat = () => {
+        if (stopped && !stats.activeTaskId) return;
+        heartbeatTimer = setTimeout(runHeartbeat, heartbeatDelay);
+      };
+      const runHeartbeat = async () => {
+        if (heartbeatRunning || leaseLost) return;
+        heartbeatRunning = true;
         try {
-          await executeTask(task.id, task.user_id, task.lease_token, () => leaseLost);
+          const renewed = await heartbeatAgentTask(pool, task.id, task.lease_token, leaseMs);
+          if (!renewed) {
+            leaseLost = true;
+            return;
+          }
+          stats.heartbeatSuccesses += 1;
+          stats.lastHeartbeatAt = new Date().toISOString();
+        } catch (error) {
+          stats.heartbeatFailures += 1;
+          reportError(error);
+          leaseLost = true;
         } finally {
-          clearInterval(heartbeat);
-          await releaseAgentTaskLease(pool, task.id, task.lease_token).catch(onError);
+          heartbeatRunning = false;
+          if (!leaseLost) scheduleHeartbeat();
         }
+      };
+      scheduleHeartbeat();
+      try {
+        stats.taskExecutions += 1;
+        await executeTask(task.id, task.user_id, task.lease_token, () => leaseLost);
+      } catch (error) {
+        reportError(error);
+      } finally {
+        clearTimeout(heartbeatTimer);
+        await releaseAgentTaskLease(pool, task.id, task.lease_token).catch(reportError);
+        stats.activeTaskId = null;
+        stats.lastTaskFinishedAt = new Date().toISOString();
       }
-    } catch (error) {
-      onError(error);
-    } finally {
-      active = false;
-    }
+    } catch (error) { reportError(error); }
+    finally { active = false; }
   }
 
   async function loop() {
@@ -120,12 +152,17 @@ export function startAgentWorker({ pool, executeTask, workerId = randomUUID(), p
       if (!stopped) await wait(pollIntervalMs);
     }
   }
-
   const done = loop();
   return {
     workerId,
+    health: () => ({
+      ok: !stopped && !stats.lastError,
+      state: stopped ? "stopped" : active ? "busy" : "idle",
+      workerId, leaseMs, pollIntervalMs, ...stats
+    }),
     stop: async () => {
       stopped = true;
+      if (timer) clearTimeout(timer);
       await done;
     }
   };
