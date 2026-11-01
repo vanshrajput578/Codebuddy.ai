@@ -44,3 +44,16 @@ The credential vault uses one server master key. Back it up securely; losing it 
 - `PUT /api/provider-selection`: selects an already-configured provider.
 - `POST /api/providers/:provider/test`: tests a saved key without returning it.
 - `POST /api/chat`: calls the selected provider and persists user/assistant messages.
+
+
+## Phase 4 agent runtime
+
+- Provider-generated plans are parsed as strict JSON and limited to five steps.
+- Server-side tool allowlist contains only `memory.search`, `memory.save` and `response.compose`; unknown tools are rejected.
+- Tool inputs are revalidated server-side; model-supplied approval flags are ignored.
+- All plans require explicit user approval. The memory-write tool is visibly marked approval-required.
+- The executor persists each completed step and event in PostgreSQL and checks task state between steps.
+- Pause, resume, reject and cancel endpoints are authenticated, CSRF-protected and user-scoped.
+- Resume requires an existing approval timestamp; execution refuses tasks without one.
+- Tasks left running during a server restart are transactionally moved to paused and require explicit resume.
+- No shell, browser, arbitrary HTTP, filesystem or device-control tool is exposed.
