@@ -224,6 +224,54 @@ export async function executeAgentTool(client, userId, toolId, rawInput) {
         text: payload.result.text.slice(0, 12_000)
       };
     }
+    case "terminal.run": {
+      const workerUrl = process.env.TERMINAL_WORKER_URL || "http://127.0.0.1:4003";
+      const token = process.env.TERMINAL_WORKER_TOKEN || "";
+      if (Buffer.byteLength(token) < 32) throw new Error("The isolated terminal worker is not configured.");
+      let endpoint;
+      try {
+        const base = new URL(workerUrl);
+        if (!["http:", "https:"].includes(base.protocol) || !base.hostname || base.username || base.password) {
+          throw new Error("Invalid terminal worker URL.");
+        }
+        endpoint = new URL("/execute", base);
+      } catch {
+        throw new Error("The isolated terminal worker URL is invalid.");
+      }
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, command: input.command, files: input.files, timeoutMs: input.timeoutMs }),
+        signal: AbortSignal.timeout(20_000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.result || !Number.isInteger(payload.result.exitCode) ||
+          typeof payload.result.stdout !== "string" || typeof payload.result.stderr !== "string" ||
+          !Array.isArray(payload.result.files) || payload.result.files.length > 50) {
+        throw new Error(`The isolated terminal worker failed (HTTP ${response.status}).`);
+      }
+      let total = 0;
+      const outputFiles = payload.result.files.map(file => {
+        const filePath = validateWorkspacePath(file.path);
+        if (typeof file.contentBase64 !== "string") throw new Error("The terminal worker returned an invalid file.");
+        const bytes = Buffer.from(file.contentBase64, "base64");
+        if (bytes.toString("base64") !== file.contentBase64 || bytes.length > 256 * 1024) {
+          throw new Error("The terminal worker returned an oversized file.");
+        }
+        total += bytes.length;
+        if (total > 1_000_000) throw new Error("The terminal worker returned an oversized workspace.");
+        return { path: filePath, contentBase64: file.contentBase64, size: bytes.length };
+      });
+      return {
+        exitCode: payload.result.exitCode,
+        stdout: payload.result.stdout.slice(0, 32_768),
+        stderr: payload.result.stderr.slice(0, 32_768),
+        timedOut: payload.result.timedOut === true,
+        outputTruncated: payload.result.outputTruncated === true,
+        files: outputFiles,
+        warnings: Array.isArray(payload.result.warnings) ? payload.result.warnings.slice(0, 30).map(value => String(value).slice(0, 240)) : []
+      };
+    }
     case "math.calculate":
       return { expression: input.expression, value: calculateExpression(input.expression) };
     case "time.now": {
