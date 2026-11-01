@@ -274,7 +274,7 @@ document.getElementById('newChat').addEventListener('click',()=>{
   showView('chat');
 });
 function showView(view){
-  const labels={chat:'AI Workspace',agents:'Agents',tasks:'Tasks',files:'Files',memory:'Memory'};
+  const labels={chat:'AI Workspace',agents:'Agents',tasks:'Tasks',files:'Files',memory:'Memory',settings:'AI Providers'};
   const descriptions={
     agents:'Create specialized agents, configure their tools and review permissions.',
     tasks:'Monitor queued, running, paused and completed agent tasks.',
@@ -284,7 +284,14 @@ function showView(view){
   document.querySelectorAll('.nav-item').forEach(item=>item.classList.toggle('active',item.dataset.view===view));
   pageName.textContent=labels[view]||labels.chat;
   chatView.classList.toggle('hidden',view!=='chat');
-  infoView.classList.toggle('hidden',view==='chat');
+  infoView.classList.toggle('hidden',view==='chat'||view==='settings');
+  providerSettings.classList.toggle('hidden',view!=='settings'||!currentUser);
+  if(view==='settings'&&!currentUser){
+    infoView.classList.remove('hidden');
+    document.getElementById('infoTitle').textContent='Sign in required';
+    document.getElementById('infoText').textContent='Sign in to manage your private AI provider credentials.';
+  }
+  if(view==='settings'&&currentUser)loadProviderSettings();
   if(view!=='chat'&&view!=='settings'){
     document.getElementById('infoTitle').textContent=labels[view];
     document.getElementById('infoText').textContent=descriptions[view]||'This module is planned.';
