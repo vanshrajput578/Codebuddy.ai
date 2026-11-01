@@ -4,7 +4,7 @@
 
 NEXUS AI is an AI workspace foundation with a same-origin web client, a Node.js API, PostgreSQL-backed accounts and a server-side Gemini integration.
 
-> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Conversation persistence, provider key vault, multiple providers, autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
+> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Per-user conversation persistence and bounded chat context are implemented. Provider key vault, multiple providers, autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
 
 ## Local setup
 Requirements: Node.js 20+, PostgreSQL 14+ and a Gemini API key.
@@ -14,7 +14,7 @@ Requirements: Node.js 20+, PostgreSQL 14+ and a Gemini API key.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000` and `GEMINI_API_KEY` in `.env`.
 4. Apply the database schema: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`.
 5. Install dependencies: `npm install`.
-6. Run the security tests: `npm test`.
+6. Run syntax checks and security tests: `npm run check && npm test`.
 7. Start the app: `npm run dev`.
 8. Open `http://localhost:4000`.
 
@@ -41,7 +41,7 @@ This is not yet production-ready for public multi-user traffic. Add per-user AI 
 - `POST /api/auth/login`: create an authenticated session.
 - `GET /api/auth/me`: inspect current session and rotate CSRF token.
 - `POST /api/auth/logout`: revoke current session.
-- `POST /api/chat`: authenticated Gemini request with CSRF validation.
+- `GET /api/conversations`: list the signed-in user's recent conversations.\n- `GET /api/conversations/:id/messages`: read messages for a conversation owned by the signed-in user.\n- `DELETE /api/conversations/:id`: delete a conversation owned by the signed-in user.\n- `POST /api/chat`: authenticated Gemini request with CSRF validation and conversation persistence.
 
 See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPLEMENTATION.md), [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
 
