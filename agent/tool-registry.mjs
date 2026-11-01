@@ -67,7 +67,7 @@ function calculateExpression(expression) {
   if (!source || source.length > 120) throw new Error("Expression is empty or too long.");
 
   const tokens = [];
-  const tokenPattern = /\s*([0-9]+(?:\.[0-9]+)?|[()+\-*/%^])/gy;
+  const tokenPattern = /\s*([0-9]+(?:\.[0-9]+)?|[()+\-*\/%^])/gy;
   let position = 0;
   while (position < source.length) {
     tokenPattern.lastIndex = position;
