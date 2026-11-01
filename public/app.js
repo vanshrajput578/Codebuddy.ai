@@ -357,7 +357,7 @@ async function sendMessage(text){
     while(true){
       const {value:chunk,done}=await reader.read();
       buffer+=decoder.decode(chunk||new Uint8Array(),{stream:!done});
-      buffer=buffer.replace(/\\r\\n/g,'\\n');
+      buffer=buffer.replace(/\r\n/g,'\\n');
       let boundary;
       while((boundary=buffer.indexOf('\n\n'))>=0){
         const frame=buffer.slice(0,boundary).replace(/\r/g,'');
