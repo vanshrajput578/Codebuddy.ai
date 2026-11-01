@@ -18,6 +18,14 @@ const accountBar=document.getElementById('accountBar');
 const accountLabel=document.getElementById('accountLabel');
 const suggestions=document.getElementById('suggestions');
 const chatArea=document.getElementById('chatArea');
+const providerSettings=document.getElementById('providerSettings');
+const providerSelect=document.getElementById('providerSelect');
+const providerModel=document.getElementById('providerModel');
+const providerKey=document.getElementById('providerKey');
+const providerError=document.getElementById('providerError');
+const providerSuccess=document.getElementById('providerSuccess');
+const providerList=document.getElementById('providerList');
+const providerDefaults={gemini:'gemini-2.5-flash',openrouter:'openai/gpt-4.1-mini',openai:'gpt-4.1-mini',anthropic:'claude-3-5-haiku-latest'};
 let sending=false;
 let registering=false;
 let csrfToken=null;
@@ -142,7 +150,81 @@ async function loadConversation(id){
     loadConversations();
   }catch(error){addMessage(error.message||'Could not open conversation.','system');}
 }
-async function sendMessage(text){
+async function providerRequest(url,options={}){
+  const response=await fetch(url,{
+    ...options,credentials:'same-origin',cache:'no-store',
+    headers:{...(options.headers||{}),'X-CSRF-Token':csrfToken||''}
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Provider settings request failed.');
+  return data;
+}
+async function loadProviderSettings(){
+  if(!currentUser)return;
+  try{
+    const data=await providerRequest('/api/providers');
+    providerList.replaceChildren();
+    for(const item of data.providers||[]){
+      const row=document.createElement('div');
+      row.className='provider-row';
+      const label=document.createElement('span');
+      label.textContent=item.name+' · '+item.model+' · '+item.keyHint;
+      const actions=document.createElement('span');
+      actions.className='provider-row-actions';
+      const use=document.createElement('button');
+      use.type='button';use.textContent=data.activeProvider===item.id?'Active':'Use';
+      use.disabled=data.activeProvider===item.id;
+      use.addEventListener('click',async()=>{
+        try{
+          await providerRequest('/api/provider-selection',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:item.id})});
+          providerSuccess.textContent=item.name+' is now active.';
+          loadProviderSettings();
+        }catch(error){providerError.textContent=error.message;}
+      });
+      actions.append(use);row.append(label,actions);providerList.append(row);
+    }
+    if(!data.providers?.length){
+      const empty=document.createElement('p');empty.className='provider-empty';empty.textContent='No provider keys saved yet.';providerList.append(empty);
+    }
+  }catch(error){providerError.textContent=error.message;}
+}
+providerSelect.addEventListener('change',()=>{
+  providerModel.value=providerDefaults[providerSelect.value]||'';
+  providerKey.value='';
+  providerError.textContent='';providerSuccess.textContent='';
+});
+document.getElementById('providerForm').addEventListener('submit',async event=>{
+  event.preventDefault();providerError.textContent='';providerSuccess.textContent='';
+  const provider=providerSelect.value;
+  const key=providerKey.value;
+  const model=providerModel.value.trim();
+  if(!key){providerError.textContent='Enter an API key first.';return;}
+  document.getElementById('saveProvider').disabled=true;
+  try{
+    await providerRequest('/api/providers/'+provider,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:key,model})});
+    providerKey.value='';
+    await providerRequest('/api/provider-selection',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider})});
+    providerSuccess.textContent='Key encrypted and saved. It will not be displayed again.';
+    loadProviderSettings();
+  }catch(error){providerError.textContent=error.message;}
+  finally{document.getElementById('saveProvider').disabled=false;providerKey.value='';}
+});
+document.getElementById('testProvider').addEventListener('click',async()=>{
+  providerError.textContent='';providerSuccess.textContent='';
+  try{
+    const data=await providerRequest('/api/providers/'+providerSelect.value+'/test',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    providerSuccess.textContent=data.message+' Model: '+data.model;
+  }catch(error){providerError.textContent=error.message;}
+});
+document.getElementById('deleteProvider').addEventListener('click',async()=>{
+  providerError.textContent='';providerSuccess.textContent='';
+  try{
+    await providerRequest('/api/providers/'+providerSelect.value,{method:'DELETE'});
+    providerSuccess.textContent='Saved key removed from the vault.';
+    loadProviderSettings();
+  }catch(error){providerError.textContent=error.message;}
+});
+\nasync function sendMessage(text){
   const value=String(text||'').trim();
   if(!value||sending)return;
   addMessage(value,'user');
@@ -202,7 +284,7 @@ function showView(view){
   pageName.textContent=labels[view]||labels.chat;
   chatView.classList.toggle('hidden',view!=='chat');
   infoView.classList.toggle('hidden',view==='chat');
-  if(view!=='chat'){
+  if(view!=='chat'&&view!=='settings'){
     document.getElementById('infoTitle').textContent=labels[view];
     document.getElementById('infoText').textContent=descriptions[view]||'This module is planned.';
   }
