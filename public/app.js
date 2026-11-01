@@ -21,6 +21,9 @@ const chatArea=document.getElementById('chatArea');
 const providerSettings=document.getElementById('providerSettings');
 const tasksView=document.getElementById('tasksView');
 const filesView=document.getElementById('filesView');
+const agentProfileSelect=document.getElementById('agentProfile');
+const agentProfileDescription=document.getElementById('agentProfileDescription');
+let availableAgentProfiles=[];
 const agentTaskForm=document.getElementById('agentTaskForm');
 const agentTaskError=document.getElementById('agentTaskError');
 const agentTaskList=document.getElementById('agentTaskList');
@@ -56,6 +59,7 @@ function setAuthenticated(user,token){
   accountLabel.textContent=user.displayName+' · '+user.email;
   composerStatus.textContent='Signed in · Provider key stays on server';
   loadConversations();
+  loadAgentProfiles();
 }
 function setUnauthenticated(){
   currentUser=null;
@@ -336,6 +340,32 @@ function makeAgentButton(label,action,className='provider-secondary'){
   button.type='button';button.className=className;button.textContent=label;
   button.addEventListener('click',action);return button;
 }
+async function loadAgentProfiles(){
+  if(!currentUser||!agentProfileSelect)return;
+  try{
+    const data=await providerRequest('/api/agents');
+    availableAgentProfiles=Array.isArray(data.agents)?data.agents:[];
+    const selected=agentProfileSelect.value||'general';
+    agentProfileSelect.replaceChildren();
+    for(const profile of availableAgentProfiles){
+      const option=document.createElement('option');
+      option.value=profile.id;
+      option.textContent=profile.label;
+      agentProfileSelect.append(option);
+    }
+    agentProfileSelect.value=availableAgentProfiles.some(profile=>profile.id===selected)?selected:'general';
+    updateAgentProfileDescription();
+  }catch(error){
+    agentTaskError.textContent='Could not load specialist profiles: '+error.message;
+  }
+}
+function updateAgentProfileDescription(){
+  const profile=availableAgentProfiles.find(item=>item.id===agentProfileSelect?.value);
+  if(!agentProfileDescription)return;
+  agentProfileDescription.textContent=profile
+    ?profile.description+' Allowed tools: '+profile.allowedTools.join(', ')+'.'
+    :'Agent profile details unavailable.';
+}
 async function loadAgentTasks(){
   if(!currentUser)return;
   try{
@@ -348,7 +378,7 @@ async function loadAgentTasks(){
       const button=document.createElement('button');
       button.type='button';button.className='agent-task-row'+(task.id===selectedAgentTaskId?' selected':'');
       const title=document.createElement('b');title.textContent=task.title;
-      const meta=document.createElement('small');meta.textContent=task.status.replaceAll('_',' ')+' · '+task.current_step+' steps done';
+      const meta=document.createElement('small');meta.textContent=(task.agent_profile||'general')+' · '+task.status.replaceAll('_',' ')+' · '+task.current_step+' steps done';
       button.append(title,meta);
       button.addEventListener('click',()=>openAgentTask(task.id));
       agentTaskList.append(button);
@@ -365,6 +395,10 @@ async function openAgentTask(id){
     const title=document.createElement('h2');title.textContent=task.title;
     const status=document.createElement('span');status.className='agent-status';status.textContent=task.status.replaceAll('_',' ');
     heading.append(title,status);agentTaskDetail.append(heading);
+    const profile=availableAgentProfiles.find(item=>item.id===task.agent_profile);
+    const profileInfo=document.createElement('p');profileInfo.className='agent-profile-summary';
+    profileInfo.textContent=(profile?.label||task.agent_profile||'General Assistant')+' · Scoped permissions: '+(Array.isArray(task.allowed_tools)?task.allowed_tools.join(', '):'server defaults');
+    agentTaskDetail.append(profileInfo);
     const prompt=document.createElement('p');prompt.className='agent-original-prompt';prompt.textContent=task.prompt;agentTaskDetail.append(prompt);
     const workspacePanel=document.createElement('section');workspacePanel.className='agent-files-panel';
     const workspaceHeading=document.createElement('h3');workspaceHeading.textContent='Workspace files';
@@ -441,6 +475,7 @@ agentTaskForm.addEventListener('submit',async event=>{
     const created=await providerRequest('/api/agent/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       title:document.getElementById('agentTaskTitle').value.trim(),
       prompt:document.getElementById('agentTaskPrompt').value.trim(),
+      agentProfile:agentProfileSelect?.value||'general',
       files
     })});
     selectedAgentTaskId=created.task.id;
@@ -454,6 +489,7 @@ agentTaskForm.addEventListener('submit',async event=>{
   finally{button.disabled=false;loadAgentTasks();}
 });
 document.getElementById('refreshAgentTasks').addEventListener('click',loadAgentTasks);
+agentProfileSelect?.addEventListener('change',updateAgentProfileDescription);
 document.getElementById('refreshFiles').addEventListener('click',loadFiles);
 
 async function sendMessage(text){
