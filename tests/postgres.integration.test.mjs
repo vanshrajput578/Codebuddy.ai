@@ -180,8 +180,21 @@ if (!process.env.DATABASE_URL) {
             authorization: options.headers?.Authorization,
             body: JSON.parse(options.body || "{}")
           };
+          const lastMessage = capturedProviderRequest.body.messages?.at(-1)?.content || "";
+          let content = "NEXUS connection successful";
+          if (lastMessage.includes("NEXUS_AGENT_PLAN_JSON")) {
+            if (lastMessage.includes("INVALID_TOOL_TEST")) {
+              content = JSON.stringify({ steps: [{ title: "Unsafe step", description: "Should be rejected.", tool: "shell.exec", input: { command: "id" } }] });
+            } else {
+              content = JSON.stringify({ steps: [
+                { title: "Search private memory", description: "Find relevant notes belonging to this user.", tool: "memory.search", input: { query: "Updated memory" } },
+                { title: "Save an approved note", description: "Persist a note only after the user approves the plan.", tool: "memory.save", input: { category: "note", content: "Approved agent memory artifact." } },
+                { title: "Summarize the result", description: "Return a concise completion summary.", tool: "response.compose", input: { text: "Agent finished after approval." } }
+              ] });
+            }
+          }
           return new Response(JSON.stringify({
-            choices: [{ message: { role: "assistant", content: "NEXUS connection successful" } }]
+            choices: [{ message: { role: "assistant", content } }]
           }), { status: 200, headers: { "content-type": "application/json" } });
         }
         return originalFetch(input, options);
@@ -215,6 +228,108 @@ if (!process.env.DATABASE_URL) {
         });
         assert.equal(secondChat.status, 200, await secondChat.text());
         assert.ok(capturedProviderRequest.body.messages.some(item => item.content.includes("blue comet.")), "chat history must be sent as provider context");
+
+        const agentCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Approved agent run", prompt: "Find my saved note, save an approved note and summarize." })
+        });
+        assert.equal(agentCreate.status, 201);
+        const agentTaskId = (await agentCreate.json()).task.id;
+        const agentPlan = await originalFetch(baseUrl + `/api/agent/tasks/${agentTaskId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        const agentPlanBody = await agentPlan.json();
+        assert.equal(agentPlan.status, 200, JSON.stringify(agentPlanBody));
+        assert.equal(agentPlanBody.task.status, "awaiting_approval");
+        assert.equal(agentPlanBody.task.plan.steps.length, 3);
+        assert.equal(agentPlanBody.task.plan.steps[1].requiresApproval, true, "memory writes must be marked approval-required");
+        assert.ok(agentPlanBody.task.plan.steps.every(step => ["memory.search", "memory.save", "response.compose"].includes(step.tool)), "planner must only return allowlisted tools");
+
+        const foreignApproval = await originalFetch(baseUrl + `/api/agent/tasks/${agentTaskId}/approve`, {
+          method: "POST", headers: { origin, cookie: second.cookie, "x-csrf-token": second.csrf }
+        });
+        assert.equal(foreignApproval.status, 404, "another user cannot approve this task");
+
+        const agentApprove = await originalFetch(baseUrl + `/api/agent/tasks/${agentTaskId}/approve`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(agentApprove.status, 202);
+        async function waitForAgentTask(id, expectedStatus) {
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const response = await originalFetch(baseUrl + `/api/agent/tasks/${id}`, { headers: { cookie: first.cookie } });
+            const body = await response.json();
+            if (body.task?.status === expectedStatus) return body;
+            if (["failed", "cancelled"].includes(body.task?.status) && body.task.status !== expectedStatus) {
+              assert.fail(`Task entered unexpected terminal state: ${body.task.status}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 20));
+          }
+          assert.fail(`Task did not reach ${expectedStatus} in time`);
+        }
+        const completedAgent = await waitForAgentTask(agentTaskId, "completed");
+        assert.equal(completedAgent.task.current_step, 3);
+        assert.equal(completedAgent.task.result, "Agent finished after approval.");
+        assert.ok(completedAgent.events.some(event => event.event_type === "task.approved"));
+        assert.equal(completedAgent.events.filter(event => event.event_type === "tool.executed").length, 3);
+        const savedAgentMemory = await pool.query(
+          "SELECT id FROM user_memories WHERE user_id=$1 AND content=$2",
+          [first.user.id, "Approved agent memory artifact."]
+        );
+        assert.equal(savedAgentMemory.rowCount, 1, "approved memory.save tool should execute exactly once");
+
+        const pausedCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Pause and resume", prompt: "Prepare a resumable task plan." })
+        });
+        const pausedId = (await pausedCreate.json()).task.id;
+        const pausedPlan = await originalFetch(baseUrl + `/api/agent/tasks/${pausedId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(pausedPlan.status, 200);
+        await pool.query("UPDATE agent_tasks SET status='running',approved_at=now() WHERE id=$1 AND user_id=$2", [pausedId, first.user.id]);
+        const pauseResponse = await originalFetch(baseUrl + `/api/agent/tasks/${pausedId}/pause`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(pauseResponse.status, 200);
+        assert.equal((await pauseResponse.json()).task.status, "paused");
+        const resumeResponse = await originalFetch(baseUrl + `/api/agent/tasks/${pausedId}/resume`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(resumeResponse.status, 202);
+        const resumed = await waitForAgentTask(pausedId, "completed");
+        assert.ok(resumed.events.some(event => event.event_type === "task.paused"));
+        assert.ok(resumed.events.some(event => event.event_type === "task.resumed"));
+
+        const rejectedCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Reject plan", prompt: "This plan will be rejected." })
+        });
+        const rejectedId = (await rejectedCreate.json()).task.id;
+        const rejectedPlan = await originalFetch(baseUrl + `/api/agent/tasks/${rejectedId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(rejectedPlan.status, 200);
+        const rejectResponse = await originalFetch(baseUrl + `/api/agent/tasks/${rejectedId}/reject`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(rejectResponse.status, 200);
+        assert.equal((await rejectResponse.json()).task.status, "cancelled");
+
+        const invalidCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Reject unsafe plan", prompt: "INVALID_TOOL_TEST" })
+        });
+        const invalidId = (await invalidCreate.json()).task.id;
+        const invalidPlan = await originalFetch(baseUrl + `/api/agent/tasks/${invalidId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(invalidPlan.status, 502, "planner cannot request arbitrary tools");
+        const invalidDetails = await originalFetch(baseUrl + `/api/agent/tasks/${invalidId}`, { headers: { cookie: first.cookie } });
+        assert.equal((await invalidDetails.json()).task.status, "failed");
       } finally {
         globalThis.fetch = originalFetch;
       }
