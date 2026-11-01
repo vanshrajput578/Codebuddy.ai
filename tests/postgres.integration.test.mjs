@@ -39,6 +39,7 @@ if (!process.env.DATABASE_URL) {
     const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
     const taskFilesMigration = await readFile(new URL("../db/migrations/008_agent_task_files.sql", import.meta.url), "utf8");
     const agentProfileMigration = await readFile(new URL("../db/migrations/009_agent_profiles.sql", import.meta.url), "utf8");
+    const agentDelegationMigration = await readFile(new URL("../db/migrations/010_agent_delegations.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -52,6 +53,8 @@ if (!process.env.DATABASE_URL) {
     await pool.query(taskFilesMigration);
     await pool.query(agentProfileMigration);
     await pool.query(agentProfileMigration);
+    await pool.query(agentDelegationMigration);
+    await pool.query(agentDelegationMigration);
     let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
