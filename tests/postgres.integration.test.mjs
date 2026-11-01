@@ -412,6 +412,7 @@ if (!process.env.DATABASE_URL) {
         assert.ok(heartbeatHealth.heartbeatSuccesses >= 2, "worker should record repeated successful heartbeats");
         assert.equal(heartbeatHealth.activeTaskId, null, "worker health must clear the active task after completion");
 
+        await pool.query("UPDATE agent_tasks SET status='failed',result='Integration fixture cleanup' WHERE status='running'");
         const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
         const child = spawn(process.execPath, ["tests/fixtures/worker-hold.mjs"], {
           cwd: process.cwd(), env: process.env, stdio: "inherit"
