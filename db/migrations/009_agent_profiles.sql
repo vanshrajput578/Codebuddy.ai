@@ -23,7 +23,7 @@ BEGIN
   ) THEN
     ALTER TABLE agent_tasks
       ADD CONSTRAINT agent_tasks_allowed_tools_check
-      CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 7);
+      CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 8);
   END IF;
 END $$;
 
