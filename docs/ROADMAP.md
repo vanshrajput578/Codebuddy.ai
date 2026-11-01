@@ -6,14 +6,14 @@ A phase is complete only after its acceptance tests pass.
 - [x] Establish NEXUS AI identity.
 - [x] Document architecture and security boundaries.
 - [x] Create browser-openable web workspace prototype.
-- [ ] Add CI and automated checks.
+- [x] Add a Gitleaks secret-scanning workflow.\n- [ ] Add automated tests and build checks.
 - [ ] Select repository license.
 
 ## Phase 1 — Web foundation
 - [ ] Convert prototype into typed React/Next.js app.
 - [ ] Add accessible responsive components.
 - [ ] Implement authentication screens and API contracts.
-- [ ] Add backend health reporting and tests.
+- [x] Add a server-side Gemini chat API and health endpoint.\n- [x] Add origin checks, request limits, Helmet headers and per-IP rate limiting.\n- [ ] Add automated API security tests.
 Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 
 ## Phase 2 — Backend and accounts
@@ -25,7 +25,7 @@ Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 Acceptance: users can register and only access their own data.
 
 ## Phase 3 — AI providers and chat
-- [ ] Provider adapter contract.
+- [ ] Provider adapter contract (current Gemini-only endpoint is a first integration).
 - [ ] Gemini and OpenRouter adapters first.
 - [ ] Server-side encrypted credential storage.
 - [ ] Model capability registry.
@@ -71,4 +71,4 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 - [ ] Deployment runbooks.
 
 ## Current truth
-This repository currently contains a static web UI prototype and project documentation. It is not yet an operational AI agent, backend, Android app or deployed service.
+The web UI now calls a server-side Gemini chat API. The backend is a single-provider prototype with origin checks and IP rate limiting; it has no user authentication, database, persistent conversations, agent runtime, Android client or sandbox. It is not production-ready for public multi-user deployment. No build or runtime tests have been executed yet.
