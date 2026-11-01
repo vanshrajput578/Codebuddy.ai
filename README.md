@@ -2,35 +2,37 @@
 
 **Your Personal Autonomous AI Workspace**
 
-NEXUS AI is an original AI-agent platform for web and Android. It is inspired by the general capabilities of autonomous agent products, with its own identity, architecture and implementation.
+NEXUS AI is an AI workspace foundation with a browser UI and a server-side Gemini chat API.
 
-> **Current status:** Web workspace prototype and architecture documentation. The AI backend, persistent memory, Android client, browser automation and sandbox are planned—not yet implemented.
-
-## Goals
-- One account across web and Android.
-- Configurable AI providers and model routing.
-- Streaming conversations and user-controlled memory.
-- Multi-step agent tasks with approvals, cancellation and execution history.
-- Browser, file and terminal tools in isolated environments.
-- Multi-agent delegation and scheduled workflows.
-
-## Structure
-- `index.html`, `styles.css`, `app.js`: current browser-openable frontend prototype.
-- `docs/ARCHITECTURE.md`: system design and security boundaries.
-- `docs/ROADMAP.md`: phased implementation and acceptance criteria.
-- `.env.example`: server-side configuration template.
+> **Current status:** The frontend can call a server-side Gemini endpoint. Agent execution, persistent memory, Android client, account authentication, browser automation and sandbox are not implemented. This is not production-ready for public multi-user use.
 
 ## Run locally
-Open `index.html` in a browser or serve this directory with a static HTTP server. The current UI is a frontend preview; it does not call an AI provider or execute tools.
+1. Install Node.js 20 or newer.
+2. Run `npm install`.
+3. Copy `.env.example` to `.env`.
+4. Set `GEMINI_API_KEY` and `APP_ORIGIN` in `.env`.
+5. Start the API with `npm run dev`.
+6. Serve the static frontend on the configured origin and reverse-proxy `/api` to the API server. The frontend and API must be same-origin; do not point browser code directly at a provider API.
 
-## Deployment
-The static frontend can be published using GitHub Pages. This does **not** deploy an AI backend. Never place provider API keys in browser JavaScript or static hosting.
+## Secret safety
+- **Never** put provider keys in `app.js`, HTML, CSS, frontend build variables or GitHub commits.
+- Keep the real `.env` file local and untracked. `.env.example` contains placeholders only.
+- Use your hosting provider's server-side secret manager in deployment.
+- If a key was ever committed or shared, revoke it and issue a new one. Removing a key from the latest commit is not enough.
+- The API never returns provider credentials or raw provider errors.
 
-## Security
-Provider secrets belong on the server, encrypted at rest. Browser and terminal automation must run in isolated sandboxes. Require approval for destructive or external side effects and enforce authorization on the backend.
+## Current API
+- `GET /api/health`: basic health and provider-configured status; no secrets.
+- `POST /api/chat`: sends a user message to Gemini from the server.
+- Security controls: Helmet headers, restrictive CSP, origin checks, request size/message validation, per-IP rate limiting and no-store API responses.
 
-## Status
-See [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
+## Important production warning
+Origin checks are not authentication. IP rate limiting is not a substitute for per-user quotas. Before public deployment, add real user authentication, per-user authorization and quotas, CSRF protection for cookie sessions, encrypted user credential storage using a managed KMS, monitoring and an isolated worker for tools. See [SECURITY.md](SECURITY.md) and [security implementation notes](docs/SECURITY-IMPLEMENTATION.md).
+
+## Project docs
+- [Architecture](docs/ARCHITECTURE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Security policy](SECURITY.md)
 
 ## License
-No open-source license has been selected yet. Normal copyright applies; do not assume unrestricted reuse.
+No open-source license has been selected yet. Normal copyright applies.
