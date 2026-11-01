@@ -426,8 +426,9 @@ if (!process.env.DATABASE_URL) {
           await new Promise(resolve => setTimeout(resolve, 50));
         }
         assert.equal(childClaimed, true, "subprocess worker must claim the test task");
+        const childExit = new Promise(resolve => child.once("exit", resolve));
         child.kill("SIGKILL");
-        await new Promise(resolve => child.once("exit", resolve));
+        await childExit;
         await new Promise(resolve => setTimeout(resolve, 5_200));
         const reclaimedAfterKill = await claimNextAgentTask(pool, "post-crash-recovery-worker", 5_000);
         assert.equal(reclaimedAfterKill?.id, crashTask.rows[0].id, "another worker must reclaim the task after a hard process kill");
