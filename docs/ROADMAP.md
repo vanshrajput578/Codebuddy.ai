@@ -63,8 +63,8 @@ Acceptance: Android and web share account and conversation history.
 Acceptance: tools execute in isolation with enforced limits.
 
 ## Phase 7 — Multi-agent and automations
-- [ ] Specialized agent definitions.
-- [ ] Delegation with scoped permissions.
+- [x] Specialized agent definitions — General, Researcher, Developer and Reviewer profiles with server-derived tool allowlists, persisted on tasks and enforced during planning, execution and replanning.
+- [ ] Delegation with scoped permissions — child-task creation, per-delegate traceability and parent/child lifecycle remain.
 - [ ] Scheduled workflows.
 - [ ] Notifications and audit history.
 Acceptance: delegated jobs are traceable and preserve permissions.
