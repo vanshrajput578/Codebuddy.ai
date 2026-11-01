@@ -525,8 +525,7 @@ async function runAgentTask(taskId, userId) {
         const plan = safeAgentPlan(task.plan);
         const stepIndex = Number(task.current_step || 0);
         if (stepIndex >= plan.steps.length) {
-          const lastResponse = [...plan.steps].reverse().find(step => step.tool === "response.compose" && step.result);
-          const resultText = lastResponse?.result?.text || "Approved plan completed.";
+          const resultText = composeAgentResult(plan.steps);
           await client.query(
             "UPDATE agent_tasks SET status='completed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3",
             [String(resultText).slice(0, 4000), taskId, userId]
