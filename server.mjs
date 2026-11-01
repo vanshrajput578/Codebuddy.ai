@@ -1054,6 +1054,134 @@ app.get("/api/agents", noStore, requireAuth, (_req, res) => {
   return res.json({ agents: listAgentDefinitions() });
 });
 
+app.get("/api/agent/schedules", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id,title,prompt,agent_profile,interval_minutes,timezone,next_run_at,last_run_at,enabled,created_at,updated_at FROM agent_schedules WHERE user_id=$1 ORDER BY next_run_at ASC,created_at DESC",
+      [req.auth.id]
+    );
+    return res.json({ schedules: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load scheduled workflows." });
+  }
+});
+
+app.post("/api/agent/schedules", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, agentLimiter, async (req, res) => {
+  const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+  const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+  const agentProfile = typeof req.body?.agentProfile === "string" ? req.body.agentProfile : "general";
+  const timezone = typeof req.body?.timezone === "string" ? req.body.timezone.trim() : "Asia/Kolkata";
+  const runAt = new Date(req.body?.runAt);
+  const intervalMinutes = req.body?.intervalMinutes === undefined || req.body?.intervalMinutes === null || req.body?.intervalMinutes === ""
+    ? null
+    : Number(req.body.intervalMinutes);
+  if (!title || title.length > 120 || !prompt || prompt.length > 8000) {
+    return res.status(400).json({ error: "Schedule title must contain 1–120 characters and prompt 1–8000 characters." });
+  }
+  if (!Number.isFinite(runAt.getTime()) || runAt.getTime() < Date.now() + 60_000 || runAt.getTime() > Date.now() + 365 * 24 * 60 * 60_000) {
+    return res.status(400).json({ error: "Run time must be between one minute and 365 days from now." });
+  }
+  if (intervalMinutes !== null && (!Number.isInteger(intervalMinutes) || intervalMinutes < 15 || intervalMinutes > 10080)) {
+    return res.status(400).json({ error: "Repeat interval must be between 15 and 10080 minutes." });
+  }
+  try { new Intl.DateTimeFormat("en", { timeZone: timezone }).format(new Date()); }
+  catch { return res.status(400).json({ error: "Timezone must be a valid IANA timezone." }); }
+  let agentDefinition;
+  try { agentDefinition = getAgentDefinition(agentProfile); }
+  catch { return res.status(400).json({ error: "Unsupported agent profile." }); }
+  try {
+    const created = await pool.query(
+      "INSERT INTO agent_schedules (user_id,title,prompt,agent_profile,interval_minutes,timezone,next_run_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,title,prompt,agent_profile,interval_minutes,timezone,next_run_at,last_run_at,enabled,created_at,updated_at",
+      [req.auth.id, title, prompt, agentDefinition.id, intervalMinutes, timezone, runAt]
+    );
+    return res.status(201).json({ schedule: created.rows[0] });
+  } catch {
+    return res.status(503).json({ error: "Could not create scheduled workflow." });
+  }
+});
+
+app.put("/api/agent/schedules/:id", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, agentLimiter, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid schedule ID." });
+  if (typeof req.body?.enabled !== "boolean") return res.status(400).json({ error: "enabled must be a boolean." });
+  try {
+    const updated = await pool.query(
+      "UPDATE agent_schedules SET enabled=$3,next_run_at=CASE WHEN $3 THEN GREATEST(next_run_at,now()+interval '1 minute') ELSE next_run_at END,updated_at=now() WHERE id=$1 AND user_id=$2 RETURNING id,title,enabled,next_run_at,last_run_at,interval_minutes,timezone",
+      [req.params.id, req.auth.id, req.body.enabled]
+    );
+    if (!updated.rowCount) return res.status(404).json({ error: "Scheduled workflow not found." });
+    return res.json({ schedule: updated.rows[0] });
+  } catch {
+    return res.status(503).json({ error: "Could not update scheduled workflow." });
+  }
+});
+
+app.delete("/api/agent/schedules/:id", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid schedule ID." });
+  try {
+    const deleted = await pool.query("DELETE FROM agent_schedules WHERE id=$1 AND user_id=$2 RETURNING id", [req.params.id, req.auth.id]);
+    if (!deleted.rowCount) return res.status(404).json({ error: "Scheduled workflow not found." });
+    return res.json({ ok: true });
+  } catch {
+    return res.status(503).json({ error: "Could not delete scheduled workflow." });
+  }
+});
+
+app.get("/api/agent/schedules/:id/runs", noStore, dbRequired, requireAuth, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid schedule ID." });
+  try {
+    const result = await pool.query(
+      "SELECT r.id,r.scheduled_for,r.status,r.created_at,r.task_id,t.status AS task_status,t.title AS task_title FROM agent_schedule_runs r LEFT JOIN agent_tasks t ON t.id=r.task_id AND t.user_id=r.user_id WHERE r.schedule_id=$1 AND r.user_id=$2 ORDER BY r.scheduled_for DESC LIMIT 100",
+      [req.params.id, req.auth.id]
+    );
+    return res.json({ runs: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load schedule history." });
+  }
+});
+
+app.get("/api/notifications", noStore, dbRequired, requireAuth, async (req, res) => {
+  const requestedLimit = Number(req.query.limit || 50);
+  const limit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(100, requestedLimit)) : 50;
+  try {
+    const [items, unread] = await Promise.all([
+      pool.query(
+        "SELECT id,task_id,schedule_id,notification_type,title,body,read_at,created_at FROM user_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
+        [req.auth.id, limit]
+      ),
+      pool.query("SELECT count(*)::int AS count FROM user_notifications WHERE user_id=$1 AND read_at IS NULL", [req.auth.id])
+    ]);
+    return res.json({ notifications: items.rows, unreadCount: unread.rows[0]?.count || 0 });
+  } catch {
+    return res.status(503).json({ error: "Could not load notifications." });
+  }
+});
+
+app.post("/api/notifications/:id/read", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid notification ID." });
+  try {
+    const updated = await pool.query(
+      "UPDATE user_notifications SET read_at=COALESCE(read_at,now()) WHERE id=$1 AND user_id=$2 RETURNING id,read_at",
+      [req.params.id, req.auth.id]
+    );
+    if (!updated.rowCount) return res.status(404).json({ error: "Notification not found." });
+    return res.json({ notification: updated.rows[0] });
+  } catch {
+    return res.status(503).json({ error: "Could not update notification." });
+  }
+});
+
+app.post("/api/notifications/read-all", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  try {
+    const updated = await pool.query(
+      "UPDATE user_notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL RETURNING id",
+      [req.auth.id]
+    );
+    return res.json({ ok: true, updated: updated.rowCount });
+  } catch {
+    return res.status(503).json({ error: "Could not mark notifications as read." });
+  }
+});
+
 app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, agentLimiter, async (req, res) => {
   const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
   const titleInput = typeof req.body?.title === "string" ? req.body.title.trim() : "";
