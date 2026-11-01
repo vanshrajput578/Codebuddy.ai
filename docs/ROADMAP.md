@@ -100,7 +100,8 @@ The agent planner accepts provider-generated JSON plans with a maximum of eight 
 - `memory.search`: read-only access to the authenticated user's saved memories.
 - `memory.save`: writes to the authenticated user's memory and is marked approval-required.
 - `math.calculate`: bounded arithmetic parser (no eval or code execution).
-- `time.now`: current time for a validated IANA timezone.\n- `response.compose`: bounded response output.
+- `time.now`: current time for a validated IANA timezone.
+- `response.compose`: bounded response output.
 
 Every plan requires explicit user approval before execution. Each tool result and task event is persisted. The executor checks state between steps. Tasks interrupted by a server restart are moved to paused and require explicit resume. Arbitrary shell, browser, HTTP, filesystem and device-control tools are not implemented.
 
