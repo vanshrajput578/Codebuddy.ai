@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { executeAgentTool as runRegisteredAgentTool, getAgentToolPrompt, getAgentToolNames, isAgentToolApprovalRequired, validateAgentToolInput, composeAgentResult } from "./agent/tool-registry.mjs";
+import { getAgentDefinition, listAgentDefinitions } from "./agent/agent-definitions.mjs";
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -491,14 +492,19 @@ const activeAgentTasks = new Set();
 function validUuid(value) {
   return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
 }
-function parseAgentPlan(raw) {
+function parseAgentPlan(raw, allowedToolIds = getAgentToolNames()) {
+  const knownTools = new Set(getAgentToolNames());
+  if (!Array.isArray(allowedToolIds) || !allowedToolIds.length ||
+      allowedToolIds.some(tool => !knownTools.has(tool))) {
+    throw new Error("Agent tool scope is invalid.");
+  }
   const cleaned = String(raw || "").trim().replace(/^\x60\x60\x60(?:json)?\s*/i, "").replace(/\s*\x60\x60\x60$/, "");
   let parsed;
   try { parsed = JSON.parse(cleaned); } catch { throw new Error("Planner returned invalid JSON."); }
   if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length < 1 || parsed.steps.length > maxAgentSteps) {
     throw new Error(`Plan must contain between 1 and ${maxAgentSteps} steps.`);
   }
-  const allowedTools = new Set(getAgentToolNames());
+  const allowedTools = new Set(allowedToolIds);
   const steps = parsed.steps.map((step, index) => {
     if (!step || typeof step !== "object" || !allowedTools.has(step.tool)) {
       throw new Error("Plan contains an unsupported tool.");
@@ -525,8 +531,9 @@ function parseAgentPlan(raw) {
   });
   return { steps, maxSteps: maxAgentSteps };
 }
-function safeAgentPlan(plan) {
-  const validated = parseAgentPlan(JSON.stringify(plan));
+function safeAgentPlan(plan, agentProfile = "general") {
+  const definition = getAgentDefinition(agentProfile);
+  const validated = parseAgentPlan(JSON.stringify(plan), definition.allowedTools);
   return {
     ...validated,
     steps: validated.steps.map((step, index) => ({
