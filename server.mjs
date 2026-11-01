@@ -1013,6 +1013,51 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   }
 });
 
+app.get("/api/agent/tasks/:id/files", noStore, dbRequired, requireAuth, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  try {
+    const owned = await pool.query(
+      "SELECT id FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      [req.params.id, req.auth.id]
+    );
+    if (!owned.rowCount) return res.status(404).json({ error: "Task not found." });
+    const files = await pool.query(
+      "SELECT id,path,size_bytes,created_at,updated_at FROM agent_task_files WHERE task_id=$1 AND user_id=$2 ORDER BY path",
+      [req.params.id, req.auth.id]
+    );
+    return res.json({
+      files: files.rows.map(file => ({
+        id: file.id, path: file.path, sizeBytes: file.size_bytes,
+        createdAt: file.created_at, updatedAt: file.updated_at
+      }))
+    });
+  } catch {
+    return res.status(503).json({ error: "Could not list task workspace files." });
+  }
+});
+
+app.get("/api/agent/tasks/:id/files/:fileId", noStore, dbRequired, requireAuth, async (req, res) => {
+  if (!validUuid(req.params.id) || !validUuid(req.params.fileId)) return res.status(400).json({ error: "Invalid file reference." });
+  try {
+    const file = await pool.query(
+      `SELECT task_id,user_id,path,ciphertext,iv,auth_tag,size_bytes
+       FROM agent_task_files WHERE id=$1 AND task_id=$2 AND user_id=$3`,
+      [req.params.fileId, req.params.id, req.auth.id]
+    );
+    if (!file.rowCount) return res.status(404).json({ error: "Workspace file not found." });
+    const decrypted = decryptTaskFile(file.rows[0]);
+    return res.json({
+      file: {
+        path: decrypted.path,
+        contentBase64: decrypted.contentBase64,
+        sizeBytes: decrypted.sizeBytes
+      }
+    });
+  } catch {
+    return res.status(503).json({ error: "Could not read task workspace file." });
+  }
+});
+
 app.post("/api/agent/tasks/:id/approve", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   const client = await pool.connect();
