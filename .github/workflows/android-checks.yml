@@ -2,12 +2,11 @@ name: Android checks
 on:
   push:
     branches: [main, phase-5/android-client]
-    paths: ["android/**", ".github/workflows/android-checks.yml"]
+    paths: ["android/**"]
   pull_request:
-    paths: ["android/**", ".github/workflows/android-checks.yml"]
+    paths: ["android/**"]
 jobs:
   build:
-    if: ${{ hashFiles('android/**') != '' }}
     runs-on: ubuntu-latest
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
