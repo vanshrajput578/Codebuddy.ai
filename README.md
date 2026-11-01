@@ -4,14 +4,14 @@
 
 NEXUS AI is an AI workspace foundation with a same-origin web client, a Node.js API, PostgreSQL-backed accounts and a server-side Gemini integration.
 
-> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Per-user conversation persistence and bounded chat context are implemented. Provider key vault, multiple providers, autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
+> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Per-user conversation persistence and bounded chat context are implemented. The encrypted per-user provider vault and Gemini/OpenAI/OpenRouter/Anthropic adapters are implemented in code. Autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
 
 ## Local setup
 Requirements: Node.js 20+, PostgreSQL 14+ and a Gemini API key.
 
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
-3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000` and `GEMINI_API_KEY` in `.env`.
+3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000` and `CREDENTIAL_ENCRYPTION_KEY` in `.env`. Generate the latter with `openssl rand -base64 32`. AI provider keys are entered in Settings and encrypted server-side.
 4. Apply the database schema: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`.
 5. Install dependencies: `npm install`.
 6. Run syntax checks and security tests: `npm run check && npm test`.
@@ -41,7 +41,7 @@ This is not yet production-ready for public multi-user traffic. Add per-user AI 
 - `POST /api/auth/login`: create an authenticated session.
 - `GET /api/auth/me`: inspect current session and rotate CSRF token.
 - `POST /api/auth/logout`: revoke current session.
-- `GET /api/conversations`: list the signed-in user's recent conversations.\n- `GET /api/conversations/:id/messages`: read messages for a conversation owned by the signed-in user.\n- `DELETE /api/conversations/:id`: delete a conversation owned by the signed-in user.\n- `POST /api/chat`: authenticated Gemini request with CSRF validation and conversation persistence.
+- `GET /api/conversations`: list the signed-in user's recent conversations.\n- `GET /api/conversations/:id/messages`: read messages for a conversation owned by the signed-in user.\n- `DELETE /api/conversations/:id`: delete a conversation owned by the signed-in user.\n- `GET /api/providers`: returns configured provider metadata without secrets.\n- `PUT /api/providers/:provider`: encrypts and stores the signed-in user's provider key.\n- `DELETE /api/providers/:provider`: removes a saved provider key.\n- `PUT /api/provider-selection`: chooses an already-configured provider.\n- `POST /api/providers/:provider/test`: tests the saved key without returning it.\n- `POST /api/chat`: authenticated request through the selected provider with CSRF validation and conversation persistence.
 
 See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPLEMENTATION.md), [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
 
