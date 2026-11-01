@@ -10,7 +10,7 @@ if (!process.env.DATABASE_URL) {
   process.env.APP_ORIGIN = "http://127.0.0.1:43127";
   process.env.CREDENTIAL_ENCRYPTION_KEY = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=";
 
-  const { app, pool } = await import("../server.mjs");
+  const { app, pool, recoverRunningAgentTasks } = await import("../server.mjs");
   const origin = process.env.APP_ORIGIN;
   const baseUrl = origin;
   let server;
@@ -320,6 +320,23 @@ if (!process.env.DATABASE_URL) {
         const resumed = await waitForAgentTask(pausedId, "completed");
         assert.ok(resumed.events.some(event => event.event_type === "task.paused"));
         assert.ok(resumed.events.some(event => event.event_type === "task.resumed"));
+
+        const recoveryCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Restart recovery", prompt: "Prepare a task for restart recovery." })
+        });
+        const recoveryId = (await recoveryCreate.json()).task.id;
+        const recoveryPlan = await originalFetch(baseUrl + `/api/agent/tasks/${recoveryId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(recoveryPlan.status, 200);
+        await pool.query("UPDATE agent_tasks SET status='running',approved_at=now() WHERE id=$1 AND user_id=$2", [recoveryId, first.user.id]);
+        assert.equal(await recoverRunningAgentTasks(), 1);
+        const recoveredTask = await originalFetch(baseUrl + `/api/agent/tasks/${recoveryId}`, { headers: { cookie: first.cookie } });
+        const recoveredBody = await recoveredTask.json();
+        assert.equal(recoveredBody.task.status, "paused");
+        assert.ok(recoveredBody.events.some(event => event.event_type === "task.recovered_paused"));
 
         const rejectedCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
