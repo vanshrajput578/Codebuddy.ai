@@ -122,3 +122,39 @@ test("browser worker requires a strong token and an explicit egress proxy", () =
   assert.throws(() => createBrowserWorkerServer({ chromium, token: "short", egressProxy: "http://proxy:3128" }), /32 bytes/);
   assert.throws(() => createBrowserWorkerServer({ chromium, token, egressProxy: "" }), /BROWSER_EGRESS_PROXY/);
 });
+
+
+test("browser worker enforces a six-job per-user rolling-window quota", async () => {
+  await withServer(async (base, state) => {
+    for (let index = 0; index < 6; index += 1) {
+      const response = await fetch(`${base}/execute`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ userId, url: "https://example.com" })
+      });
+      assert.equal(response.status, 200);
+    }
+    const limited = await fetch(`${base}/execute`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId, url: "https://example.com" })
+    });
+    assert.equal(limited.status, 429);
+    assert.equal(state.launches, 6);
+  });
+});
+
+test("browser worker rejects oversized and unexpected job payloads", async () => {
+  await withServer(async base => {
+    const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+    const oversized = await fetch(`${base}/execute`, {
+      method: "POST", headers: { ...headers, "content-length": String(20_000) }, body: "{}"
+    });
+    assert.equal(oversized.status, 400);
+    const extraField = await fetch(`${base}/execute`, {
+      method: "POST", headers,
+      body: JSON.stringify({ userId, url: "https://example.com", command: "whoami" })
+    });
+    assert.equal(extraField.status, 400);
+  });
+});
