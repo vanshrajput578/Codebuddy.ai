@@ -13,7 +13,7 @@ A phase is complete only after its acceptance tests pass.
 - [ ] Convert prototype into typed React/Next.js app.
 - [ ] Add accessible responsive components.
 - [x] Implement account sign-in and registration UI.
-- [x] Add a server-side Gemini chat API and health endpoint.
+- [x] Add a server-side provider-routed chat API and health endpoint.
 - [x] Add origin checks, request limits, Helmet headers and per-IP rate limiting.
 - [x] Add automated API security tests.
 Acceptance: app builds, navigation works, auth uses a real API, tests pass.
@@ -25,17 +25,17 @@ Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 - [x] Registration, login, current-session and logout endpoints.
 - [x] Require authenticated sessions and CSRF validation for chat.
 - [x] User-scoped conversation and message persistence.
-- [x] Recent conversation history and bounded context for Gemini chat.
+- [x] Recent conversation history and bounded context for selected-provider chat.
 Acceptance: users can register and only access their own data.
 
 ## Phase 3 — AI providers and chat
 - [x] Add a server-side provider adapter contract for Gemini, OpenAI, OpenRouter and Anthropic.
 - [x] Implement Gemini, OpenRouter, OpenAI and Anthropic API adapters.
-- [x] Add per-user AES-256-GCM encrypted provider credential storage.
+- [x] Add per-user AES-256-GCM encrypted provider credential storage.\n- [x] Add provider settings UI, per-user provider selection and credential deletion.\n- [x] Add provider request timeouts and PostgreSQL-backed integration coverage.
 - [ ] Model capability registry.
 - [ ] Streaming chat and usage/error reporting.
 - [x] Add authenticated provider connection test endpoint.
-Acceptance: configured provider returns a real streamed response.
+Acceptance: configured provider returns a real streamed response. Current: credential storage, selection and adapters are implemented; actual live provider calls and streaming remain unverified/not implemented.
 
 ## Phase 4 — Agent runtime and memory
 - [ ] Durable tasks and execution events.
@@ -75,4 +75,4 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 - [ ] Deployment runbooks.
 
 ## Current truth
-Account registration/login, PostgreSQL-backed sessions, CSRF checks and authenticated server-side Gemini chat are now implemented in the repository. Conversations and messages are saved per user; the UI can reopen recent conversations and Gemini receives the latest 12 messages as context. The backend now includes an encrypted per-user provider vault and server-side Gemini, OpenAI, OpenRouter and Anthropic adapters. Remaining work includes live PostgreSQL integration tests, per-user AI quotas, account recovery/email verification, agent runtime, Android client, isolated sandbox and a production security review. The latest GitHub Actions backend checks and Gitleaks secret scan passed for commit 5f57b7c. Live PostgreSQL/provider integration tests and production deployment have not been run.
+Account registration/login, PostgreSQL-backed sessions, CSRF checks and authenticated server-side Gemini chat are now implemented in the repository. Conversations and messages are saved per user; the UI can reopen recent conversations and Gemini receives the latest 12 messages as context. The backend now includes an encrypted per-user provider vault and server-side Gemini, OpenAI, OpenRouter and Anthropic adapters. Remaining work includes live PostgreSQL integration tests, per-user AI quotas, account recovery/email verification, agent runtime, Android client, isolated sandbox and a production security review. The latest CI run before the PostgreSQL integration suite passed syntax/security tests only. The CI workflow now provisions PostgreSQL and runs end-to-end database tests. Live third-party provider calls, Android, agent tools, computer-use sandbox and production deployment remain unverified or unimplemented.
