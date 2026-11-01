@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#09090d">
+<meta name="description" content="NEXUS AI — Your personal autonomous AI workspace."><title>NEXUS AI — Autonomous Workspace</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="app-shell">
+<aside class="sidebar" id="sidebar">
+<a class="brand" href="#"><span class="brand-mark">N</span><span>NEXUS <small>AI</small></span></a>
+<button class="new-chat" id="newChat">＋ <span>New conversation</span></button>
+<p class="nav-label">WORKSPACE</p>
+<nav class="nav">
+<button class="nav-item active" data-view="chat"><span>◈</span> AI Workspace</button>
+<button class="nav-item" data-view="agents"><span>⌘</span> Agents <em>Planned</em></button>
+<button class="nav-item" data-view="tasks"><span>◷</span> Tasks <em>Planned</em></button>
+<button class="nav-item" data-view="files"><span>▤</span> Files <em>Planned</em></button>
+<button class="nav-item" data-view="memory"><span>◎</span> Memory <em>Planned</em></button>
+</nav>
+<div class="sidebar-bottom"><div class="connection"><span class="status-dot"></span><div><b>Secure API</b><small>Server-side provider connection</small></div></div><a class="settings-link" href="./docs/ARCHITECTURE.md">Architecture & docs ↗</a></div>
+</aside>
+<main class="main">
+<header class="topbar"><button class="icon-button mobile-menu" id="menuToggle" aria-label="Toggle menu">☰</button><div class="breadcrumb">Workspace <span>/</span> <b id="pageName">AI Workspace</b></div><div class="top-actions"><span class="mode-pill"><i></i> Secure API mode</span><button class="avatar" title="Local preview">V</button></div></header>
+<section class="content" id="chatView">
+<div class="welcome"><div class="orb"><span>✳</span></div><p class="eyebrow">YOUR AUTONOMOUS WORKSPACE</p><h1>Make room for<br><span>what's next.</span></h1><p class="subheading">A unified space for thinking, building and getting work done with AI.</p>
+<div class="notice"><span>ⓘ</span><div><b>Preview environment</b><p>Chat requests are sent to your same-origin backend. Provider credentials remain on the server and are never included in browser code.</p></div></div></div>
+<section class="auth-panel" id="authPanel">
+<h2 id="authTitle">Sign in to NEXUS</h2>
+<p id="authDescription">Sign in to use your private workspace.</p>
+<form id="authForm">
+<label id="nameField" class="auth-field hidden">Display name<input id="authName" type="text" maxlength="50" autocomplete="name" placeholder="Your name"></label>
+<label class="auth-field">Email<input id="authEmail" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"></label>
+<label class="auth-field">Password<input id="authPassword" type="password" minlength="12" maxlength="128" autocomplete="current-password" required placeholder="At least 12 characters"></label>
+<button class="auth-submit" id="authSubmit" type="submit">Sign in</button>
+<p class="auth-error" id="authError" role="alert"></p>
+</form>
+<button class="auth-switch" id="authSwitch" type="button">New here? Create an account</button>
+</section>
+<div class="account-bar hidden" id="accountBar"><span id="accountLabel"></span><button id="logoutButton" type="button">Sign out</button></div>
+<div class="suggestions hidden" id="suggestions">
+<button class="suggestion" data-prompt="Help me plan a new software project."><span>⌘</span><b>Plan a project</b><small>Turn an idea into an execution plan</small></button>
+<button class="suggestion" data-prompt="Explain how an autonomous AI agent works."><span>✳</span><b>Explore an idea</b><small>Understand a complex topic</small></button>
+<button class="suggestion" data-prompt="Create a checklist for launching a website."><span>☷</span><b>Build a workflow</b><small>Break work into clear steps</small></button>
+</div>
+<div class="chat-area hidden" id="chatArea"><div class="messages" id="messages" aria-live="polite"></div><form class="composer" id="chatForm"><textarea id="prompt" rows="1" placeholder="Ask NEXUS anything..." aria-label="Message NEXUS"></textarea><div class="composer-footer"><span><span class="tiny-dot"></span> Secure API · Provider key server-side</span><button class="send-button" type="submit" aria-label="Send message">↑</button></div></form><p class="disclaimer">NEXUS AI · Provider keys stay on the server. Chat history is not saved yet.</p></div>
+</section>
+<section class="content secondary-view hidden" id="infoView"><div class="section-icon">◈</div><p class="eyebrow">NEXUS MODULE</p><h1 id="infoTitle">Agents</h1><p class="subheading" id="infoText">This module is part of the implementation roadmap.</p><div class="notice"><span>◷</span><div><b>Not implemented yet</b><p>This is intentionally marked as planned. No fake agent execution or task data is shown.</p></div></div><a class="doc-link" href="./docs/ROADMAP.md">View implementation roadmap ↗</a></section>
+</main></div><script src="./app.js"></script></body></html>
