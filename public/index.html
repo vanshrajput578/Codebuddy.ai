@@ -17,6 +17,7 @@
 <button class="nav-item" data-view="tasks"><span>◷</span> Tasks <em>Planned</em></button>
 <button class="nav-item" data-view="files"><span>▤</span> Files <em>Planned</em></button>
 <button class="nav-item" data-view="memory"><span>◎</span> Memory <em>Planned</em></button>
+<button class="nav-item" data-view="settings"><span>⚙</span> AI Providers</button>
 </nav>
 <p class="nav-label recent-label">RECENT CHATS</p>
 <div class="conversation-list" id="conversationList" aria-label="Recent conversations"></div>
@@ -48,4 +49,17 @@
 <div class="chat-area hidden" id="chatArea"><div class="messages" id="messages" aria-live="polite"></div><form class="composer" id="chatForm"><textarea id="prompt" rows="1" placeholder="Ask NEXUS anything..." aria-label="Message NEXUS"></textarea><div class="composer-footer"><span><span class="tiny-dot"></span> Secure API · Provider key server-side</span><button class="send-button" type="submit" aria-label="Send message">↑</button></div></form><p class="disclaimer">NEXUS AI · Provider keys stay on the server. Chat history is not saved yet.</p></div>
 </section>
 <section class="content secondary-view hidden" id="infoView"><div class="section-icon">◈</div><p class="eyebrow">NEXUS MODULE</p><h1 id="infoTitle">Agents</h1><p class="subheading" id="infoText">This module is part of the implementation roadmap.</p><div class="notice"><span>◷</span><div><b>Not implemented yet</b><p>This is intentionally marked as planned. No fake agent execution or task data is shown.</p></div></div><a class="doc-link" href="./docs/ROADMAP.md">View implementation roadmap ↗</a></section>
+<section class="content secondary-view hidden" id="providerSettings">
+<div class="section-icon">⚙</div><p class="eyebrow">PRIVATE CREDENTIAL VAULT</p><h1>AI Providers</h1>
+<p class="subheading">Add your own provider key. It is encrypted on the server and never shown again after saving.</p>
+<div class="security-note"><b>Security boundary</b><span>Keys are encrypted with AES-256-GCM using a server-only master key. The browser receives only a masked configured status. Never paste a key into a public issue or chat.</span></div>
+<form id="providerForm" class="provider-form">
+<label class="auth-field">Provider<select id="providerSelect"><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option></select></label>
+<label class="auth-field">Model ID<input id="providerModel" maxlength="120" required value="gemini-2.5-flash" autocomplete="off"></label>
+<label class="auth-field">API key<input id="providerKey" type="password" maxlength="512" required autocomplete="new-password" placeholder="Paste provider key"></label>
+<div class="provider-actions"><button class="auth-submit" id="saveProvider" type="submit">Encrypt & save key</button><button class="provider-secondary" id="testProvider" type="button">Test connection</button><button class="provider-danger" id="deleteProvider" type="button">Remove key</button></div>
+<p class="auth-error" id="providerError" role="alert"></p><p class="provider-success" id="providerSuccess" role="status"></p>
+</form>
+<div class="provider-list"><h2>Configured providers</h2><div id="providerList">Sign in to load provider settings.</div></div>
+</section>
 </main></div><script src="./app.js"></script></body></html>
