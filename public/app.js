@@ -28,6 +28,14 @@ const agentTaskForm=document.getElementById('agentTaskForm');
 const agentTaskError=document.getElementById('agentTaskError');
 const agentTaskList=document.getElementById('agentTaskList');
 const agentTaskDetail=document.getElementById('agentTaskDetail');
+const scheduleForm=document.getElementById('scheduleForm');
+const scheduleList=document.getElementById('scheduleList');
+const scheduleError=document.getElementById('scheduleError');
+const scheduleSuccess=document.getElementById('scheduleSuccess');
+const notificationToggle=document.getElementById('notificationToggle');
+const notificationCount=document.getElementById('notificationCount');
+const notificationPanel=document.getElementById('notificationPanel');
+const notificationList=document.getElementById('notificationList');
 let selectedAgentTaskId=null;
 const providerSelect=document.getElementById('providerSelect');
 const providerModel=document.getElementById('providerModel');
@@ -60,6 +68,7 @@ function setAuthenticated(user,token){
   composerStatus.textContent='Signed in · Provider key stays on server';
   loadConversations();
   loadAgentProfiles();
+  loadNotifications();
 }
 function setUnauthenticated(){
   currentUser=null;
@@ -366,6 +375,93 @@ function updateAgentProfileDescription(){
     ?profile.description+' Allowed tools: '+profile.allowedTools.join(', ')+'.'
     :'Agent profile details unavailable.';
 }
+async function loadNotifications(){
+  if(!currentUser)return;
+  try{
+    const data=await providerRequest('/api/notifications');
+    notificationCount.textContent=String(data.unreadCount||0);
+    notificationList.replaceChildren();
+    if(!data.notifications?.length){
+      const empty=document.createElement('p');empty.className='provider-empty';empty.textContent='No notifications yet.';notificationList.append(empty);return;
+    }
+    for(const item of data.notifications){
+      const button=document.createElement('button');
+      button.type='button';button.className='notification-row'+(item.read_at?'':' unread');
+      const title=document.createElement('b');title.textContent=item.title;
+      const body=document.createElement('span');body.textContent=item.body;
+      const time=document.createElement('small');time.textContent=new Date(item.created_at).toLocaleString();
+      button.append(title,body,time);
+      button.addEventListener('click',async()=>{
+        try{
+          if(!item.read_at)await providerRequest('/api/notifications/'+item.id+'/read',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+          if(item.task_id){showView('tasks');await openAgentTask(item.task_id);}
+          await loadNotifications();
+        }catch(error){scheduleError.textContent=error.message;}
+      });
+      notificationList.append(button);
+    }
+  }catch(error){
+    notificationList.replaceChildren();
+    const row=document.createElement('p');row.className='provider-empty';row.textContent=error.message;notificationList.append(row);
+  }
+}
+
+function formatScheduleTime(value,timezone){
+  try{return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short',timeZone:timezone||'Asia/Kolkata'}).format(new Date(value));}
+  catch{return new Date(value).toLocaleString();}
+}
+
+async function loadScheduledWorkflows(){
+  if(!currentUser)return;
+  try{
+    const data=await providerRequest('/api/agent/schedules');
+    scheduleList.replaceChildren();
+    if(!data.schedules?.length){
+      const empty=document.createElement('p');empty.className='provider-empty';empty.textContent='No scheduled workflows yet.';scheduleList.append(empty);return;
+    }
+    for(const schedule of data.schedules){
+      const row=document.createElement('div');row.className='schedule-row';
+      const main=document.createElement('div');main.className='schedule-row-main';
+      const title=document.createElement('b');title.textContent=schedule.title;
+      const repeat=document.createElement('span');repeat.textContent=schedule.interval_minutes?('Repeats every '+schedule.interval_minutes+' minutes'):'One-time workflow';
+      const next=document.createElement('small');next.textContent=(schedule.enabled?'Next run: ':'Paused · next run: ')+formatScheduleTime(schedule.next_run_at,schedule.timezone);
+      main.append(title,repeat,next);
+      const actions=document.createElement('div');actions.className='schedule-row-actions';
+      const history=document.createElement('button');history.type='button';history.textContent='History';
+      history.addEventListener('click',()=>loadScheduleHistory(schedule.id,row));
+      const toggle=document.createElement('button');toggle.type='button';toggle.textContent=schedule.enabled?'Pause':'Resume';
+      toggle.addEventListener('click',async()=>{
+        scheduleError.textContent='';scheduleSuccess.textContent='';
+        try{await providerRequest('/api/agent/schedules/'+schedule.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!schedule.enabled})});await loadScheduledWorkflows();}
+        catch(error){scheduleError.textContent=error.message;}
+      });
+      const remove=document.createElement('button');remove.type='button';remove.textContent='Delete';
+      remove.addEventListener('click',async()=>{
+        scheduleError.textContent='';scheduleSuccess.textContent='';
+        try{await providerRequest('/api/agent/schedules/'+schedule.id,{method:'DELETE'});await loadScheduledWorkflows();}
+        catch(error){scheduleError.textContent=error.message;}
+      });
+      actions.append(history,toggle,remove);row.append(main,actions);scheduleList.append(row);
+    }
+  }catch(error){scheduleError.textContent=error.message;}
+}
+
+async function loadScheduleHistory(scheduleId,row){
+  const existing=row.querySelector('.schedule-history');
+  if(existing){existing.remove();return;}
+  try{
+    const data=await providerRequest('/api/agent/schedules/'+scheduleId+'/runs');
+    const panel=document.createElement('div');panel.className='schedule-history';
+    if(!data.runs?.length){const empty=document.createElement('p');empty.textContent='No runs recorded yet.';panel.append(empty);}
+    for(const run of data.runs||[]){
+      const item=document.createElement('p');
+      item.textContent=formatScheduleTime(run.scheduled_for,'Asia/Kolkata')+' · '+(run.task_status||run.status||'queued')+(run.task_title?' · '+run.task_title:'');
+      panel.append(item);
+    }
+    row.append(panel);
+  }catch(error){scheduleError.textContent=error.message;}
+}
+
 async function loadAgentTasks(){
   if(!currentUser)return;
   try{
@@ -489,6 +585,49 @@ agentTaskForm.addEventListener('submit',async event=>{
   finally{button.disabled=false;loadAgentTasks();}
 });
 document.getElementById('refreshAgentTasks').addEventListener('click',loadAgentTasks);
+scheduleForm?.addEventListener('submit',async event=>{
+  event.preventDefault();scheduleError.textContent='';scheduleSuccess.textContent='';
+  const button=document.getElementById('createSchedule');button.disabled=true;
+  try{
+    const localValue=document.getElementById('scheduleRunAt').value;
+    const runAt=new Date(localValue);
+    if(!Number.isFinite(runAt.getTime()))throw new Error('Choose a valid first-run time.');
+    const intervalValue=document.getElementById('scheduleInterval').value;
+    const payload={
+      title:document.getElementById('scheduleTitle').value.trim(),
+      prompt:document.getElementById('schedulePrompt').value.trim(),
+      agentProfile:agentProfileSelect?.value||'general',
+      timezone:document.getElementById('scheduleTimezone').value.trim()||'Asia/Kolkata',
+      runAt:runAt.toISOString(),
+      ...(intervalValue?{intervalMinutes:Number(intervalValue)}:{})
+    };
+    const result=await providerRequest('/api/agent/schedules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    scheduleSuccess.textContent='Workflow scheduled. It will be queued by the NEXUS worker at the selected time.';
+    document.getElementById('scheduleTitle').value='';
+    document.getElementById('schedulePrompt').value='';
+    document.getElementById('scheduleRunAt').value=defaultScheduleTime();
+    await loadScheduledWorkflows();
+    await loadNotifications();
+  }catch(error){scheduleError.textContent=error.message;}
+  finally{button.disabled=false;}
+});
+function defaultScheduleTime(){
+  const date=new Date(Date.now()+5*60_000);
+  date.setMinutes(date.getMinutes()-date.getTimezoneOffset());
+  return date.toISOString().slice(0,16);
+}
+if(document.getElementById('scheduleRunAt')&&!document.getElementById('scheduleRunAt').value){
+  document.getElementById('scheduleRunAt').value=defaultScheduleTime();
+}
+document.getElementById('refreshSchedules')?.addEventListener('click',loadScheduledWorkflows);
+notificationToggle?.addEventListener('click',()=>{
+  notificationPanel.classList.toggle('hidden');
+  if(!notificationPanel.classList.contains('hidden'))loadNotifications();
+});
+document.getElementById('markAllNotificationsRead')?.addEventListener('click',async()=>{
+  try{await providerRequest('/api/notifications/read-all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await loadNotifications();}
+  catch(error){notificationList.textContent=error.message;}
+});
 agentProfileSelect?.addEventListener('change',updateAgentProfileDescription);
 document.getElementById('refreshFiles').addEventListener('click',loadFiles);
 
@@ -560,7 +699,7 @@ function showView(view){
     document.getElementById('infoTitle').textContent='Sign in required';
     document.getElementById('infoText').textContent='Sign in to create and manage your private agent tasks.';
   }
-  if(view==='tasks'&&currentUser)loadAgentTasks();
+  if(view==='tasks'&&currentUser){loadAgentTasks();loadScheduledWorkflows();}
   if(view==='settings'&&!currentUser){
     infoView.classList.remove('hidden');
     document.getElementById('infoTitle').textContent='Sign in required';
