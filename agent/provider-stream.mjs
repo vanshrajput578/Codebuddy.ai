@@ -63,6 +63,16 @@ export async function* streamProviderResponse(provider, key, model, prompt, hist
     extract = data => data.type === "content_block_delta" && data.delta?.type === "text_delta" ? data.delta.text : "";
   } else throw new Error("Unsupported provider.");
 
-  const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: signal || AbortSignal.timeout(60_000) });
-  yield* readSse(response, extract, signal);
+  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000);
+  let response;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: requestSignal });
+    if (response.ok || ![408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 1) break;
+    await response.body?.cancel().catch(() => {});
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 250 * (attempt + 1));
+      requestSignal.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("Stream cancelled.")); }, { once: true });
+    });
+  }
+  yield* readSse(response, extract, requestSignal);
 }
