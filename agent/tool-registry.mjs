@@ -1,3 +1,5 @@
+import { parseBrowserUrl } from "../computer/browser-policy.mjs";
+
 const memoryCategories = new Set(["note", "preference", "project", "personal"]);
 
 const toolDefinitions = [
@@ -5,6 +7,7 @@ const toolDefinitions = [
   { id: "memory.save", description: "Save a note to the user's private memory. Input: {category:'note'|'preference'|'project'|'personal',content:string}. Requires user approval.", requiresApproval: true },
   { id: "math.calculate", description: "Safely calculate a basic arithmetic expression using numbers, parentheses, +, -, *, /, %, and ^. Input: {expression:string}. No code execution.", requiresApproval: false },
   { id: "time.now", description: "Get the current date and time in an IANA timezone. Input: {timezone?:string}; defaults to Asia/Kolkata.", requiresApproval: false },
+  { id: "browser.open", description: "Open one public HTTP(S) webpage in the isolated read-only browser and extract its visible text. Input: {url:string}. Outbound browsing requires explicit plan approval. Set replanAfter=true so the next step can use page evidence.", requiresApproval: true },
   { id: "response.compose", description: "Return the final response text. Input: {text:string}. Must be the final plan step.", requiresApproval: false }
 ];
 
@@ -46,6 +49,10 @@ export function validateAgentToolInput(toolId, rawInput) {
     }
     case "math.calculate":
       return { expression: requireText(rawInput.expression, "math expression", 120) };
+    case "browser.open": {
+      const url = parseBrowserUrl(requireText(rawInput.url, "browser URL", 2048));
+      return { url: url.href };
+    }
     case "time.now": {
       const timezone = rawInput.timezone === undefined ? "Asia/Kolkata" : requireText(rawInput.timezone, "timezone", 64);
       try {
@@ -154,6 +161,35 @@ export async function executeAgentTool(client, userId, toolId, rawInput) {
         [userId, input.category, input.content]
       );
       return { saved: saved.rows[0] };
+    }
+    case "browser.open": {
+      const workerUrl = process.env.BROWSER_WORKER_URL || "http://127.0.0.1:4002";
+      const token = process.env.BROWSER_WORKER_TOKEN || "";
+      if (Buffer.byteLength(token) < 32) throw new Error("The isolated browser worker is not configured.");
+      let endpoint;
+      try {
+        const base = new URL(workerUrl);
+        if (!["http:", "https:"].includes(base.protocol) || !base.hostname) throw new Error("Invalid worker URL.");
+        endpoint = new URL("/execute", base);
+      } catch {
+        throw new Error("The isolated browser worker URL is invalid.");
+      }
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, url: input.url }),
+        signal: AbortSignal.timeout(20_000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.result || typeof payload.result.text !== "string") {
+        throw new Error(`The isolated browser worker failed (HTTP ${response.status}).`);
+      }
+      return {
+        url: String(payload.result.url || input.url).slice(0, 2048),
+        title: String(payload.result.title || "").slice(0, 300),
+        status: Number.isInteger(payload.result.status) ? payload.result.status : null,
+        text: payload.result.text.slice(0, 12_000)
+      };
     }
     case "math.calculate":
       return { expression: input.expression, value: calculateExpression(input.expression) };
