@@ -25,7 +25,7 @@ test("tool inputs are normalized and bounded", () => {
   assert.deepEqual(validateAgentToolInput("math.calculate", { expression: " 2 + 3 " }), { expression: "2 + 3" });
   assert.deepEqual(validateAgentToolInput("time.now", {}), { timezone: "Asia/Kolkata" });
   assert.deepEqual(validateAgentToolInput("browser.open", { url: "https://example.com/path" }), { url: "https://example.com/path" });
-  assert.throws(() => validateAgentToolInput("browser.open", { url: "http://127.0.0.1:4000/" }), /Private/);
+  assert.throws(() => validateAgentToolInput("browser.open", { url: "http://127.0.0.1/" }), /Private/);
   assert.throws(() => validateAgentToolInput("memory.search", { query: "" }), /Invalid/);
   assert.throws(() => validateAgentToolInput("memory.save", { category: "admin", content: "x" }), /category/);
   assert.throws(() => validateAgentToolInput("time.now", { timezone: "Not/AZone" }), /timezone/);
