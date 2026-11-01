@@ -680,7 +680,14 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
           client.release();
           clientReleased = true;
 
-          const result = await runRegisteredAgentTool(null, userId, step.tool, step.input);
+          let toolInput = step.input;
+          if (step.tool === "terminal.run") {
+            const storedFiles = await loadTaskWorkspaceFiles(taskId, userId);
+            const mergedFiles = new Map(storedFiles.map(file => [file.path, file]));
+            for (const file of step.input.files || []) mergedFiles.set(file.path, file);
+            toolInput = { ...step.input, files: [...mergedFiles.values()] };
+          }
+          const result = await runRegisteredAgentTool(null, userId, step.tool, toolInput);
           if (isLeaseLost()) return;
 
           const persist = await pool.connect();
@@ -703,8 +710,18 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
               await persist.query("ROLLBACK");
               return;
             }
+            let persistedResult = result;
+            if (step.tool === "terminal.run") {
+              const workspaceFiles = await saveTaskWorkspaceSnapshot(
+                persist, taskId, userId, result.files || [], result.warnings || []
+              );
+              persistedResult = {
+                ...result,
+                files: workspaceFiles
+              };
+            }
             persistedStep.status = "completed";
-            persistedStep.result = result;
+            persistedStep.result = persistedResult;
             currentPlan.steps[stepIndex] = persistedStep;
             await persist.query(
               "UPDATE agent_tasks SET plan=$1::jsonb,current_step=$2,updated_at=now() WHERE id=$3 AND user_id=$4",
@@ -712,7 +729,7 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
             );
             await appendTaskEvent(persist, taskId, "tool.executed", {
               stepId: step.id, tool: step.tool, requiresApproval: true,
-              result: JSON.stringify(result).slice(0, 1200)
+              result: JSON.stringify(persistedResult).slice(0, 1200)
             });
             await persist.query("COMMIT");
           } catch (error) {
