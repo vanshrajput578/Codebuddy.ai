@@ -33,11 +33,14 @@ if (!process.env.DATABASE_URL) {
     const schema = await readFile(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = await readFile(new URL("../db/migrations/003_agent_runtime.sql", import.meta.url), "utf8");
     const stepLimitMigration = await readFile(new URL("../db/migrations/004_agent_step_limit.sql", import.meta.url), "utf8");
+    const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
     await pool.query(stepLimitMigration);
     await pool.query(stepLimitMigration);
+    await pool.query(replanningMigration);
+    await pool.query(replanningMigration);
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -194,12 +197,18 @@ if (!process.env.DATABASE_URL) {
           };
           const lastMessage = capturedProviderRequest.body.messages?.at(-1)?.content || "";
           let content = "NEXUS connection successful";
-          if (lastMessage.includes("NEXUS_AGENT_PLAN_JSON")) {
+          if (lastMessage.includes("NEXUS_AGENT_REPLAN_JSON")) {
+            content = JSON.stringify({ steps: [
+              { title: "Save the approved follow-up", description: "Persist the follow-up only after renewed approval.", tool: "memory.save", input: { category: "note", content: "Approved agent memory artifact." } },
+              { title: "Summarize the updated evidence", description: "Summarize the search result and approved save.", tool: "response.compose", input: { text: "Agent finished after dynamic replanning." } }
+            ] });
+          } else if (lastMessage.includes("NEXUS_AGENT_PLAN_JSON")) {
             if (lastMessage.includes("INVALID_TOOL_TEST")) {
               content = JSON.stringify({ steps: [{ title: "Unsafe step", description: "Should be rejected.", tool: "shell.exec", input: { command: "id" } }] });
             } else {
+              const shouldReplan = lastMessage.includes("User task: Find my saved note");
               content = JSON.stringify({ steps: [
-                { title: "Search private memory", description: "Find relevant notes belonging to this user.", tool: "memory.search", input: { query: "Agent runtime seed" } },
+                { title: "Search private memory", description: "Find relevant notes belonging to this user.", tool: "memory.search", input: { query: "Agent runtime seed" }, replanAfter: shouldReplan },
                 { title: "Save an approved note", description: "Persist a note only after the user approves the plan.", tool: "memory.save", input: { category: "note", content: "Approved agent memory artifact." } },
                 { title: "Summarize the result", description: "Return a concise completion summary.", tool: "response.compose", input: { text: "Agent finished after approval." } }
               ] });
@@ -288,14 +297,31 @@ if (!process.env.DATABASE_URL) {
           }
           assert.fail(`Task did not reach ${expectedStatus} in time`);
         }
+        const replannedAgent = await waitForAgentTask(agentTaskId, "awaiting_approval");
+        assert.equal(replannedAgent.task.current_step, 1, "the first approved search step must remain completed");
+        assert.equal(replannedAgent.task.replan_count, 1, "one evidence-driven replan should be recorded");
+        assert.equal(replannedAgent.task.plan.steps.length, 3, "completed evidence plus continuation must remain within the plan");
+        assert.equal(replannedAgent.task.plan.steps[0].status, "completed");
+        assert.ok(replannedAgent.events.some(event => event.event_type === "task.replanned"));
+        assert.ok(replannedAgent.events.some(event => event.event_type === "task.reapproval_required"));
+        const beforeReapprovalMemory = await pool.query(
+          "SELECT id FROM user_memories WHERE user_id=$1 AND content=$2",
+          [first.user.id, "Approved agent memory artifact."]
+        );
+        assert.equal(beforeReapprovalMemory.rowCount, 0, "a newly proposed write must wait for renewed approval");
+        const secondApproval = await originalFetch(baseUrl + `/api/agent/tasks/${agentTaskId}/approve`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(secondApproval.status, 202, "the user must explicitly approve the replanned write");
         const completedAgent = await waitForAgentTask(agentTaskId, "completed");
         assert.equal(completedAgent.task.current_step, 3);
-        assert.ok(completedAgent.task.result.startsWith("Agent finished after approval."));
+        assert.equal(completedAgent.task.replan_count, 1);
+        assert.ok(completedAgent.task.result.startsWith("Agent finished after dynamic replanning."));
         assert.match(completedAgent.task.result, /Verified execution results/);
         assert.match(completedAgent.task.result, /memory.search/);
         assert.match(completedAgent.task.result, /memory.save/);
         assert.equal(completedAgent.task.plan.steps[0].result.memories.length, 1, "tool outputs must persist in the execution plan");
-        assert.ok(completedAgent.events.some(event => event.event_type === "task.approved"));
+        assert.equal(completedAgent.events.filter(event => event.event_type === "task.approved").length, 2, "the continuation write must have a separate approval event");
         assert.equal(completedAgent.events.filter(event => event.event_type === "tool.executed").length, 3);
         const savedAgentMemory = await pool.query(
           "SELECT id FROM user_memories WHERE user_id=$1 AND content=$2",
