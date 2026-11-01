@@ -13,7 +13,10 @@ test("capability registry covers every supported provider with streaming enabled
 });
 
 test("capability lookup validates providers and applies model defaults", () => {
-  assert.equal(getProviderCapabilities("openai").model, "gpt-4.1-mini");
+  assert.equal(getProviderCapabilities("gemini").model, "gemini-3.8-flash");
+  assert.equal(getProviderCapabilities("openai").model, "gpt-6-luna");
+  assert.equal(getProviderCapabilities("openrouter").model, "openai/gpt-6-luna");
+  assert.equal(getProviderCapabilities("anthropic").model, "claude-haiku-5-5");
   assert.equal(getProviderCapabilities("openai", "custom-model").model, "custom-model");
   assert.throws(() => getProviderCapabilities("unknown"), /Unsupported provider/);
 });
