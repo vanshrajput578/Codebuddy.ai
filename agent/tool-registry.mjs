@@ -1,4 +1,5 @@
 import { parseBrowserUrl } from "../computer/browser-policy.mjs";
+import { validateWorkspacePath } from "../computer/terminal-sandbox-runner.mjs";
 
 const memoryCategories = new Set(["note", "preference", "project", "personal"]);
 
@@ -8,6 +9,7 @@ const toolDefinitions = [
   { id: "math.calculate", description: "Safely calculate a basic arithmetic expression using numbers, parentheses, +, -, *, /, %, and ^. Input: {expression:string}. No code execution.", requiresApproval: false },
   { id: "time.now", description: "Get the current date and time in an IANA timezone. Input: {timezone?:string}; defaults to Asia/Kolkata.", requiresApproval: false },
   { id: "browser.open", description: "Open one public HTTP(S) webpage in the isolated read-only browser and extract its visible text. Input: {url:string}. Outbound browsing requires explicit plan approval. Set replanAfter=true so the next step can use page evidence.", requiresApproval: true },
+  { id: "terminal.run", description: "Run one command in a disposable non-root, no-network terminal sandbox and transfer a bounded set of project files in and out. Input: {command:string,files?:[{path:string,contentBase64:string}],timeoutMs?:number}. Every command requires explicit plan approval. Set replanAfter=true to use command output.", requiresApproval: true },
   { id: "response.compose", description: "Return the final response text. Input: {text:string}. Must be the final plan step.", requiresApproval: false }
 ];
 
@@ -52,6 +54,37 @@ export function validateAgentToolInput(toolId, rawInput) {
     case "browser.open": {
       const url = parseBrowserUrl(requireText(rawInput.url, "browser URL", 2048));
       return { url: url.href };
+    }
+    case "terminal.run": {
+      const command = requireText(rawInput.command, "terminal command", 4000);
+      const timeoutMs = rawInput.timeoutMs === undefined ? 10_000 : rawInput.timeoutMs;
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 15_000) {
+        throw new Error("Terminal timeout must be between 1 and 15 seconds.");
+      }
+      const files = rawInput.files === undefined ? [] : rawInput.files;
+      if (!Array.isArray(files) || files.length > 30) throw new Error("Terminal workspace supports at most 30 files.");
+      const seen = new Set();
+      let total = 0;
+      const normalizedFiles = files.map(file => {
+        if (!file || typeof file !== "object" || Array.isArray(file) ||
+            Object.keys(file).some(key => !["path", "contentBase64"].includes(key))) {
+          throw new Error("Invalid terminal workspace file.");
+        }
+        const filePath = validateWorkspacePath(file.path);
+        if (seen.has(filePath)) throw new Error("Duplicate terminal workspace path.");
+        seen.add(filePath);
+        if (typeof file.contentBase64 !== "string" || file.contentBase64.length > 350_000) {
+          throw new Error("Terminal workspace file content is invalid or too large.");
+        }
+        const bytes = Buffer.from(file.contentBase64, "base64");
+        if (bytes.toString("base64") !== file.contentBase64 || bytes.length > 256 * 1024) {
+          throw new Error("Terminal files must use valid base64 and be at most 256 KiB each.");
+        }
+        total += bytes.length;
+        if (total > 1_000_000) throw new Error("Terminal workspace input is limited to 1 MiB.");
+        return { path: filePath, contentBase64: file.contentBase64 };
+      });
+      return { command, files: normalizedFiles, timeoutMs };
     }
     case "time.now": {
       const timezone = rawInput.timezone === undefined ? "Asia/Kolkata" : requireText(rawInput.timezone, "timezone", 64);
