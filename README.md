@@ -71,3 +71,11 @@ See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPL
 ## License
 
 No open-source license has been selected. Normal copyright applies.
+
+### Provider streaming and usage (Phase 3)
+
+- Apply `db/migrations/007_provider_usage.sql` to existing databases (fresh schema users should also apply this migration after the base schema).
+- Chat uses authenticated same-origin Server-Sent Events at `POST /api/chat/stream`; the web client renders deltas as they arrive.
+- Gemini, OpenAI, OpenRouter and Anthropic have provider-specific SSE adapters. Transient HTTP 408/429/5xx responses receive one bounded retry before any output is streamed; requests have a 60-second timeout and support client cancellation.
+- `GET /api/providers/usage` returns the authenticated user's last-30-day request counts, success/error counts, input/output character counts and average latency. Character counts are estimates, not billable token counts; provider-specific token accounting is not claimed.
+- Model capability metadata is exposed with `GET /api/providers` under `supported`. Model availability and limits can change at provider discretion; live third-party credentials are not part of CI.
