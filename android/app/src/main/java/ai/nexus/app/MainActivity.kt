@@ -161,10 +161,43 @@ private fun ChatScreen(api: NexusApi, loading: Boolean, runRequest: (suspend () 
     var messages by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     var draft by remember { mutableStateOf("") }
     var conversationId by remember { mutableStateOf<String?>(null) }
+    var historyOpen by remember { mutableStateOf(false) }
+    var conversations by remember { mutableStateOf(listOf<JSONObject>()) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("AI Chat", style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = { messages = emptyList(); conversationId = null }) { Text("New chat") }
+            Row {
+                Box {
+                    TextButton(onClick = {
+                        runRequest {
+                            val array = withContext(Dispatchers.IO) { api.conversations() }
+                            conversations = (0 until array.length()).map { array.getJSONObject(it) }
+                            historyOpen = true
+                        }
+                    }) { Text("History") }
+                    DropdownMenu(expanded = historyOpen, onDismissRequest = { historyOpen = false }) {
+                        conversations.forEach { conversation ->
+                            DropdownMenuItem(
+                                text = { Text(conversation.optString("title").take(38)) },
+                                onClick = {
+                                    val id = conversation.optString("id")
+                                    runRequest {
+                                        val array = withContext(Dispatchers.IO) { api.conversationMessages(id) }
+                                        messages = (0 until array.length()).map { index ->
+                                            val item = array.getJSONObject(index)
+                                            (if (item.optString("role") == "assistant") "NEXUS" else "You") to item.optString("content")
+                                        }
+                                        conversationId = id
+                                        historyOpen = false
+                                    }
+                                }
+                            )
+                        }
+                        if (conversations.isEmpty()) DropdownMenuItem(text = { Text("No conversations yet") }, onClick = { historyOpen = false })
+                    }
+                }
+                TextButton(onClick = { messages = emptyList(); conversationId = null }) { Text("New chat") }
+            }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(messages) { item ->
@@ -197,25 +230,45 @@ private fun TasksScreen(api: NexusApi, runRequest: (suspend () -> Unit) -> Unit)
     var tasks by remember { mutableStateOf(listOf<JSONObject>()) }
     var detail by remember { mutableStateOf<JSONObject?>(null) }
     var selectedId by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf("") }
+
     fun refresh() = runRequest {
         val array = withContext(Dispatchers.IO) { api.tasks() }
         tasks = (0 until array.length()).map { array.getJSONObject(it) }
         if (selectedId.isNotBlank()) detail = withContext(Dispatchers.IO) { api.task(selectedId).optJSONObject("task") }
     }
     LaunchedEffect(Unit) { refresh() }
-    Column(Modifier.fillMaxSize()) {
+
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Agent Tasks", style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = { refresh() }) { Text("Refresh") }
         }
-        if (tasks.isEmpty()) Text("No tasks yet. Create tasks from the web workspace.", color = Muted)
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Task title (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(value = prompt, onValueChange = { prompt = it }, label = { Text("What should NEXUS do?") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3)
+        Button(enabled = prompt.isNotBlank(), onClick = {
+            runRequest {
+                val created = withContext(Dispatchers.IO) { api.createTask(title, prompt) }
+                val id = created.optJSONObject("task")?.optString("id").orEmpty()
+                if (id.isBlank()) error("Task creation did not return an ID.")
+                withContext(Dispatchers.IO) { api.planTask(id) }
+                selectedId = id
+                detail = withContext(Dispatchers.IO) { api.task(id).optJSONObject("task") }
+                title = ""; prompt = ""
+                val array = withContext(Dispatchers.IO) { api.tasks() }
+                tasks = (0 until array.length()).map { array.getJSONObject(it) }
+            }
+        }, modifier = Modifier.fillMaxWidth()) { Text("Create task & generate plan") }
+
+        Text("Your tasks", style = MaterialTheme.typography.titleMedium)
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             items(tasks) { task ->
                 Card(onClick = {
                     selectedId = task.optString("id")
                     runRequest { detail = withContext(Dispatchers.IO) { api.task(selectedId).optJSONObject("task") } }
                 }, colors = CardDefaults.cardColors(containerColor = Panel)) {
-                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(11.dp)) {
                         Text(task.optString("title"), fontWeight = FontWeight.SemiBold)
                         Text(task.optString("status").replace('_', ' ') + " · " + task.optInt("current_step") + " steps", color = Muted)
                     }
@@ -223,26 +276,38 @@ private fun TasksScreen(api: NexusApi, runRequest: (suspend () -> Unit) -> Unit)
             }
         }
         detail?.let { task ->
-            Divider(color = Color(0xFF373440))
-            Text(task.optString("title"), style = MaterialTheme.typography.titleMedium)
-            Text(task.optString("status").replace('_', ' '), color = Violet)
-            Text(task.optString("result"), color = Muted)
-            val actions = when (task.optString("status")) {
-                "awaiting_approval" -> listOf("approve", "reject")
-                "running" -> listOf("pause", "cancel")
-                "paused" -> listOf("resume", "cancel")
-                else -> emptyList()
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                actions.forEach { action ->
-                    OutlinedButton(onClick = {
-                        runRequest {
-                            withContext(Dispatchers.IO) { api.taskAction(task.optString("id"), action) }
-                            detail = withContext(Dispatchers.IO) { api.task(task.optString("id")).optJSONObject("task") }
-                            val array = withContext(Dispatchers.IO) { api.tasks() }
-                            tasks = (0 until array.length()).map { array.getJSONObject(it) }
-                        }
-                    }) { Text(action.replaceFirstChar { it.uppercase() }) }
+            Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                HorizontalDivider(color = Color(0xFF373440))
+                Text(task.optString("title"), style = MaterialTheme.typography.titleMedium)
+                Text(task.optString("status").replace('_', ' '), color = Violet)
+                val plan = task.optJSONObject("plan")?.optJSONArray("steps")
+                if (plan != null) {
+                    Text("Plan · review before approval", fontWeight = FontWeight.SemiBold)
+                    for (index in 0 until plan.length()) {
+                        val step = plan.getJSONObject(index)
+                        Text("${index + 1}. ${step.optString("title")} · ${step.optString("tool")}", fontWeight = FontWeight.Medium)
+                        Text(step.optString("description"), color = Muted, style = MaterialTheme.typography.bodySmall)
+                        if (step.optBoolean("requiresApproval")) Text("APPROVAL REQUIRED", color = Color(0xFFFFC66D), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (task.optString("result").isNotBlank()) Text(task.optString("result"), color = Muted)
+                val actions = when (task.optString("status")) {
+                    "awaiting_approval" -> listOf("approve", "reject")
+                    "running" -> listOf("pause", "cancel")
+                    "paused" -> listOf("resume", "cancel")
+                    else -> emptyList()
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    actions.forEach { action ->
+                        OutlinedButton(onClick = {
+                            runRequest {
+                                withContext(Dispatchers.IO) { api.taskAction(task.optString("id"), action) }
+                                detail = withContext(Dispatchers.IO) { api.task(task.optString("id")).optJSONObject("task") }
+                                val array = withContext(Dispatchers.IO) { api.tasks() }
+                                tasks = (0 until array.length()).map { array.getJSONObject(it) }
+                            }
+                        }) { Text(action.replaceFirstChar { it.uppercase() }) }
+                    }
                 }
             }
         }
