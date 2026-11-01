@@ -2,7 +2,6 @@ import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
-import { GoogleGenAI } from "@google/genai";
 import pg from "pg";
 import {
   createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual,\n  createCipheriv, createDecipheriv
