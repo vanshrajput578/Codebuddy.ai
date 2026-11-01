@@ -92,7 +92,7 @@ All plans remain in `awaiting_approval` until the user approves. The runner pers
 
 ## Phase 6 terminal sandbox
 
-The terminal controller is a separate private service on a dedicated sandbox host/VM. It starts a fresh container for each approved `terminal.run` invocation; workspace files are explicitly supplied to that job and bounded files are returned, so this is scratch storage rather than a persistent shared filesystem.
+The terminal controller is a separate private service on a dedicated sandbox host/VM. It starts a fresh container for each approved `terminal.run` invocation. The task-scoped workspace persists in PostgreSQL with AES-256-GCM encryption and per-user/task/path associated data; a bounded file snapshot is loaded into the container tmpfs before each command and the returned snapshot is encrypted back into the same task workspace.
 
 The fixed container configuration uses `--network none`, read-only root filesystem, UID/GID 10001, dropped capabilities, no-new-privileges, default seccomp, 256 MiB memory, 0.5 CPU, 64 PIDs, 64 MiB workspace tmpfs, 16 MiB temporary tmpfs and a 15-second command timeout. The controller accepts only a strict command/files schema, applies 10 jobs/minute per user and two concurrent jobs globally, and forcibly removes a named container on controller timeout. It never mounts host paths or passes application/database/provider secrets into the sandbox.
 
