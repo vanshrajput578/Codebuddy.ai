@@ -87,3 +87,18 @@ test("stream adapter applies the registry default model when no model is configu
     assert.equal(captured.body.model, "gpt-4.1-mini");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+
+test("stream adapter exposes HTTP status for live provider diagnostics", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("provider error body must not be echoed", { status: 401 });
+  try {
+    await assert.rejects(async () => {
+      for await (const _chunk of streamProviderResponse("openai", "provider-test-key-123", "model-test", "hello")) {}
+    }, error => {
+      assert.match(error.message, /HTTP 401/);
+      assert.doesNotMatch(error.message, /provider error body/);
+      return true;
+    });
+  } finally { globalThis.fetch = originalFetch; }
+});
