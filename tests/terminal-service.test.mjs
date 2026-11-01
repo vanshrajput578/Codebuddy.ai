@@ -72,33 +72,49 @@ test("terminal worker returns bounded sandbox output", async () => {
   });
 });
 
-test("terminal worker enforces per-user quota and global concurrency", async () => {
-  let release;
-  await withServer(async (base, calls) => {
+test("terminal worker enforces a per-user rolling quota", async () => {
+  await withServer(async base => {
     const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
-    release = null;
-    const hold = new Promise(resolve => { release = resolve; });
-    const slowServer = createTerminalWorkerServer({
-      token,
-      runSandbox: async job => {
-        calls.push(job);
-        await hold;
-        return { exitCode: 0, stdout: "", stderr: "", timedOut: false, outputTruncated: false, files: [], warnings: [], totalBytes: 0 };
-      }
-    });
-    await new Promise(resolve => slowServer.listen(0, "127.0.0.1", resolve));
-    const slowBase = `http://127.0.0.1:${slowServer.address().port}`;
-    try {
-      const body = JSON.stringify({ userId, command: "true", files: [] });
-      const running = fetch(`${slowBase}/execute`, { method: "POST", headers, body });
-      await new Promise(resolve => setTimeout(resolve, 15));
-      const busy = await fetch(`${slowBase}/execute`, { method: "POST", headers, body });
-      assert.equal(busy.status, 429);
-      release();
-      assert.equal((await running).status, 200);
-    } finally {
-      if (release) release();
-      await new Promise(resolve => slowServer.close(resolve));
+    const body = JSON.stringify({ userId, command: "true", files: [] });
+    for (let index = 0; index < 10; index += 1) {
+      const response = await fetch(`${base}/execute`, { method: "POST", headers, body });
+      assert.equal(response.status, 200);
+    }
+    const limited = await fetch(`${base}/execute`, { method: "POST", headers, body });
+    assert.equal(limited.status, 429);
+  });
+});
+
+test("terminal worker allows at most two concurrent sandbox jobs", async () => {
+  let startedCount = 0;
+  let resolveStarted;
+  const started = new Promise(resolve => { resolveStarted = resolve; });
+  let releaseJobs;
+  const release = new Promise(resolve => { releaseJobs = resolve; });
+  const server = createTerminalWorkerServer({
+    token,
+    runSandbox: async () => {
+      startedCount += 1;
+      if (startedCount === 2) resolveStarted();
+      await release;
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false, outputTruncated: false, files: [], warnings: [], totalBytes: 0 };
     }
   });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+  const body = JSON.stringify({ userId, command: "true", files: [] });
+  try {
+    const first = fetch(`${base}/execute`, { method: "POST", headers, body });
+    const second = fetch(`${base}/execute`, { method: "POST", headers, body });
+    await started;
+    const third = await fetch(`${base}/execute`, { method: "POST", headers, body });
+    assert.equal(third.status, 429);
+    releaseJobs();
+    assert.equal((await first).status, 200);
+    assert.equal((await second).status, 200);
+  } finally {
+    releaseJobs();
+    await new Promise(resolve => server.close(resolve));
+  }
 });
