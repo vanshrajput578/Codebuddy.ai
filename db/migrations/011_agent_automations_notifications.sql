@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS agent_schedule_runs (
   scheduled_for TIMESTAMPTZ NOT NULL,
   task_id UUID,
   status VARCHAR(20) NOT NULL DEFAULT 'queued'
-    CHECK (status IN ('queued','failed','cancelled')),
+    CHECK (status IN ('queued','awaiting_approval','running','paused','completed','failed','cancelled')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT agent_schedule_runs_schedule_time_uq UNIQUE (schedule_id,scheduled_for),
   CONSTRAINT agent_schedule_runs_id_user_uq UNIQUE (id,user_id),
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS user_notifications (
   task_id UUID,
   schedule_id UUID,
   schedule_run_id UUID UNIQUE,
-  notification_type VARCHAR(32) NOT NULL CHECK (notification_type IN ('schedule.queued','task.awaiting_approval','task.completed','task.failed')),
+  notification_type VARCHAR(32) NOT NULL CHECK (notification_type IN ('schedule.queued','task.awaiting_approval','task.running','task.paused','task.completed','task.failed','task.cancelled')),
   title VARCHAR(120) NOT NULL,
   body VARCHAR(500) NOT NULL,
   read_at TIMESTAMPTZ,
