@@ -1,11 +1,36 @@
-<div align="center">
+# NEXUS AI
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+**Your Personal Autonomous AI Workspace**
 
-  <h1>Built with AI Studio</h2>
+NEXUS AI is an original AI-agent platform for web and Android. It is inspired by the general capabilities of autonomous agent products, with its own identity, architecture and implementation.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+> **Current status:** Web workspace prototype and architecture documentation. The AI backend, persistent memory, Android client, browser automation and sandbox are planned—not yet implemented.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Goals
+- One account across web and Android.
+- Configurable AI providers and model routing.
+- Streaming conversations and user-controlled memory.
+- Multi-step agent tasks with approvals, cancellation and execution history.
+- Browser, file and terminal tools in isolated environments.
+- Multi-agent delegation and scheduled workflows.
 
-</div>
+## Structure
+- `index.html`, `styles.css`, `app.js`: current browser-openable frontend prototype.
+- `docs/ARCHITECTURE.md`: system design and security boundaries.
+- `docs/ROADMAP.md`: phased implementation and acceptance criteria.
+- `.env.example`: server-side configuration template.
+
+## Run locally
+Open `index.html` in a browser or serve this directory with a static HTTP server. The current UI is a frontend preview; it does not call an AI provider or execute tools.
+
+## Deployment
+The static frontend can be published using GitHub Pages. This does **not** deploy an AI backend. Never place provider API keys in browser JavaScript or static hosting.
+
+## Security
+Provider secrets belong on the server, encrypted at rest. Browser and terminal automation must run in isolated sandboxes. Require approval for destructive or external side effects and enforce authorization on the backend.
+
+## Status
+See [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
+
+## License
+No open-source license has been selected yet. Normal copyright applies; do not assume unrestricted reuse.
