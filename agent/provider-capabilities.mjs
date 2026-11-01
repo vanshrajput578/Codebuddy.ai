@@ -1,8 +1,8 @@
 export const PROVIDER_CAPABILITIES = Object.freeze({
-  gemini: Object.freeze({ label: "Google Gemini", streaming: true, tools: false, vision: true, jsonMode: true, defaultModel: "gemini-2.5-flash", contextWindow: 1_000_000, maxOutputTokens: 8_192 }),
-  openai: Object.freeze({ label: "OpenAI", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "gpt-4.1-mini", contextWindow: 1_047_576, maxOutputTokens: 32_768 }),
-  openrouter: Object.freeze({ label: "OpenRouter", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "openai/gpt-4.1-mini", contextWindow: null, maxOutputTokens: null }),
-  anthropic: Object.freeze({ label: "Anthropic Claude", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "claude-3-5-haiku-latest", contextWindow: 200_000, maxOutputTokens: 8_192 })
+  gemini: Object.freeze({ label: "Google Gemini", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "gemini-3.8-flash", contextWindow: 1_048_576, maxOutputTokens: 65_536 }),
+  openai: Object.freeze({ label: "OpenAI", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "gpt-6-luna", contextWindow: 1_050_000, maxOutputTokens: 128_000 }),
+  openrouter: Object.freeze({ label: "OpenRouter", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "openai/gpt-6-luna", contextWindow: 1_050_000, maxOutputTokens: 128_000 }),
+  anthropic: Object.freeze({ label: "Anthropic Claude", streaming: true, tools: true, vision: true, jsonMode: true, defaultModel: "claude-haiku-5-5", contextWindow: 1_000_000, maxOutputTokens: 128_000 })
 });
 
 export function getProviderCapabilities(provider, model) {
