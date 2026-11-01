@@ -232,6 +232,59 @@ document.getElementById('deleteProvider').addEventListener('click',async()=>{
 });
 
 
+const agentFileInput=document.getElementById('agentTaskFiles');
+const agentFolderInput=document.getElementById('agentTaskFolder');
+const agentFileStatus=document.getElementById('agentFileStatus');
+function currentWorkspaceSelection(){
+  return [...(agentFileInput?.files||[]),...(agentFolderInput?.files||[])];
+}
+function formatFileSize(bytes){
+  if(bytes<1024)return bytes+' B';
+  if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KiB';
+  return (bytes/(1024*1024)).toFixed(2)+' MiB';
+}
+function updateWorkspaceSelectionStatus(){
+  const files=currentWorkspaceSelection();
+  const total=files.reduce((sum,file)=>sum+file.size,0);
+  if(!files.length){agentFileStatus.textContent='No files selected.';return;}
+  agentFileStatus.textContent=files.length+' file(s) selected · '+formatFileSize(total)+' · limit 30 files / 1 MiB';
+}
+agentFileInput?.addEventListener('change',updateWorkspaceSelectionStatus);
+agentFolderInput?.addEventListener('change',updateWorkspaceSelectionStatus);
+async function encodeTaskWorkspaceFiles(){
+  const files=currentWorkspaceSelection();
+  if(files.length>30)throw new Error('Select no more than 30 files.');
+  let total=0;
+  const output=[];
+  for(const file of files){
+    if(file.size>256*1024)throw new Error(file.name+' exceeds the 256 KiB per-file limit.');
+    total+=file.size;
+    if(total>1024*1024)throw new Error('Selected files exceed the 1 MiB total limit.');
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    let binary='';
+    for(let offset=0;offset<bytes.length;offset+=0x8000){
+      binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));
+    }
+    output.push({path:file.webkitRelativePath||file.name,contentBase64:btoa(binary)});
+  }
+  return output;
+}
+async function downloadWorkspaceFile(taskId,file){
+  const response=await providerRequest('/api/agent/tasks/'+taskId+'/files/'+file.id);
+  const encoded=response.file.contentBase64;
+  const binary=atob(encoded);
+  const bytes=new Uint8Array(binary.length);
+  for(let index=0;index<binary.length;index++)bytes[index]=binary.charCodeAt(index);
+  const blob=new Blob([bytes],{type:'application/octet-stream'});
+  const url=URL.createObjectURL(blob);
+  const anchor=document.createElement('a');
+  anchor.href=url;
+  anchor.download=file.path.split('/').pop()||'workspace-file';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
 function makeAgentButton(label,action,className='provider-secondary'){
   const button=document.createElement('button');
   button.type='button';button.className=className;button.textContent=label;
@@ -267,6 +320,26 @@ async function openAgentTask(id){
     const status=document.createElement('span');status.className='agent-status';status.textContent=task.status.replaceAll('_',' ');
     heading.append(title,status);agentTaskDetail.append(heading);
     const prompt=document.createElement('p');prompt.className='agent-original-prompt';prompt.textContent=task.prompt;agentTaskDetail.append(prompt);
+    const workspacePanel=document.createElement('section');workspacePanel.className='agent-files-panel';
+    const workspaceHeading=document.createElement('h3');workspaceHeading.textContent='Workspace files';
+    workspacePanel.append(workspaceHeading);
+    try{
+      const workspace=await providerRequest('/api/agent/tasks/'+id+'/files');
+      if(workspace.files?.length){
+        for(const file of workspace.files){
+          const row=document.createElement('div');row.className='agent-file-row';
+          const info=document.createElement('span');
+          info.textContent=file.path+' · '+formatFileSize(Number(file.sizeBytes)||0);
+          row.append(info,makeAgentButton('Download',()=>downloadWorkspaceFile(id,file)));
+          workspacePanel.append(row);
+        }
+      }else{
+        const empty=document.createElement('p');empty.className='provider-empty';empty.textContent='No files in this task workspace yet.';workspacePanel.append(empty);
+      }
+    }catch{
+      const unavailable=document.createElement('p');unavailable.className='provider-empty';unavailable.textContent='Workspace file list unavailable.';workspacePanel.append(unavailable);
+    }
+    agentTaskDetail.append(workspacePanel);
     if(Array.isArray(task.plan?.steps)&&task.plan.steps.length){
       const planTitle=document.createElement('h3');planTitle.textContent='Execution plan · '+task.plan.steps.length+' bounded steps';agentTaskDetail.append(planTitle);
       for(const step of task.plan.steps){
@@ -318,13 +391,18 @@ agentTaskForm.addEventListener('submit',async event=>{
   event.preventDefault();agentTaskError.textContent='';
   const button=document.getElementById('createAgentTask');button.disabled=true;
   try{
+    const files=await encodeTaskWorkspaceFiles();
     const created=await providerRequest('/api/agent/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       title:document.getElementById('agentTaskTitle').value.trim(),
-      prompt:document.getElementById('agentTaskPrompt').value.trim()
+      prompt:document.getElementById('agentTaskPrompt').value.trim(),
+      files
     })});
     selectedAgentTaskId=created.task.id;
-    await providerRequest('/api/agent/tasks/'+created.task.id+'/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    document.getElementById('agentTaskFiles').value='';
+    document.getElementById('agentTaskFolder').value='';
+    updateWorkspaceSelectionStatus();
     document.getElementById('agentTaskPrompt').value='';
+    await providerRequest('/api/agent/tasks/'+created.task.id+'/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     await openAgentTask(created.task.id);
   }catch(error){agentTaskError.textContent=error.message;}
   finally{button.disabled=false;loadAgentTasks();}
