@@ -13,6 +13,7 @@ if (!process.env.DATABASE_URL) {
 
   const { app, pool, runAgentTask } = await import("../server.mjs");
   const { startAgentWorker, claimNextAgentTask, releaseAgentTaskLease } = await import("../agent/worker-queue.mjs");
+  const { processDueAgentSchedules } = await import("../agent/automation-scheduler.mjs");
   const origin = process.env.APP_ORIGIN;
   const baseUrl = origin;
   let server;
@@ -40,6 +41,7 @@ if (!process.env.DATABASE_URL) {
     const taskFilesMigration = await readFile(new URL("../db/migrations/008_agent_task_files.sql", import.meta.url), "utf8");
     const agentProfileMigration = await readFile(new URL("../db/migrations/009_agent_profiles.sql", import.meta.url), "utf8");
     const agentDelegationMigration = await readFile(new URL("../db/migrations/010_agent_delegations.sql", import.meta.url), "utf8");
+    const automationMigration = await readFile(new URL("../db/migrations/011_agent_automations_notifications.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -55,6 +57,8 @@ if (!process.env.DATABASE_URL) {
     await pool.query(agentProfileMigration);
     await pool.query(agentDelegationMigration);
     await pool.query(agentDelegationMigration);
+    await pool.query(automationMigration);
+    await pool.query(automationMigration);
     let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
@@ -650,6 +654,95 @@ if (!process.env.DATABASE_URL) {
       } finally {
         globalThis.fetch = originalFetch;
       }
+
+      const runAt = new Date(Date.now() - 30_000);
+      const oneShot = await pool.query(
+        "INSERT INTO agent_schedules (user_id,title,prompt,agent_profile,timezone,next_run_at) VALUES ($1,$2,$3,'researcher','Asia/Kolkata',$4) RETURNING id",
+        [first.user.id, "Daily public research", "Summarize the latest saved research topic.", runAt]
+      );
+      const scheduledTasks = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10 });
+      assert.equal(scheduledTasks.length, 1, "a due one-shot schedule should enqueue exactly one task");
+      assert.equal(scheduledTasks[0].scheduleId, oneShot.rows[0].id);
+      const duplicateSchedulePass = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10 });
+      assert.equal(duplicateSchedulePass.length, 0, "a one-shot schedule must not enqueue twice");
+      const oneShotState = await pool.query(
+        "SELECT enabled,last_run_at FROM agent_schedules WHERE id=$1 AND user_id=$2",
+        [oneShot.rows[0].id, first.user.id]
+      );
+      assert.equal(oneShotState.rows[0].enabled, false);
+      assert.ok(oneShotState.rows[0].last_run_at);
+      const scheduleRun = await pool.query(
+        "SELECT id,task_id,status FROM agent_schedule_runs WHERE schedule_id=$1 AND user_id=$2",
+        [oneShot.rows[0].id, first.user.id]
+      );
+      assert.equal(scheduleRun.rowCount, 1);
+      assert.equal(scheduleRun.rows[0].task_id, scheduledTasks[0].taskId);
+
+      const inbox = await fetch(baseUrl + "/api/notifications", { headers: { cookie: first.cookie } });
+      const inboxBody = await inbox.json();
+      assert.equal(inbox.status, 200, JSON.stringify(inboxBody));
+      const scheduleNotification = inboxBody.notifications.find(item => item.schedule_id === oneShot.rows[0].id);
+      assert.ok(scheduleNotification, "scheduled workflow should create a private inbox notification");
+      const foreignInbox = await fetch(baseUrl + "/api/notifications", { headers: { cookie: second.cookie } });
+      assert.equal((await foreignInbox.json()).notifications.length, 0, "notifications must be scoped to their owner");
+      const markRead = await fetch(baseUrl + `/api/notifications/${scheduleNotification.id}/read`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: "{}"
+      });
+      assert.equal(markRead.status, 200);
+      const readCheck = await pool.query("SELECT read_at FROM user_notifications WHERE id=$1 AND user_id=$2", [scheduleNotification.id, first.user.id]);
+      assert.ok(readCheck.rows[0].read_at, "notification read state should persist");
+
+      const recurringAt = new Date(Date.now() - 30_000);
+      const recurring = await pool.query(
+        "INSERT INTO agent_schedules (user_id,title,prompt,agent_profile,interval_minutes,timezone,next_run_at) VALUES ($1,$2,$3,'general',15,'Asia/Kolkata',$4) RETURNING id",
+        [first.user.id, "Project status check", "Review the current project status.", recurringAt]
+      );
+      const recurringTasks = await processDueAgentSchedules(pool, { now: new Date(), batchSize: 10 });
+      assert.equal(recurringTasks.length, 1);
+      const recurringState = await pool.query(
+        "SELECT enabled,next_run_at,last_run_at FROM agent_schedules WHERE id=$1 AND user_id=$2",
+        [recurring.rows[0].id, first.user.id]
+      );
+      assert.equal(recurringState.rows[0].enabled, true);
+      assert.ok(new Date(recurringState.rows[0].next_run_at).getTime() > Date.now());
+      assert.ok(recurringState.rows[0].last_run_at);
+
+      const apiScheduled = await fetch(baseUrl + "/api/agent/schedules", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({
+          title: "Weekly review",
+          prompt: "Prepare a weekly review.",
+          agentProfile: "reviewer",
+          timezone: "Asia/Kolkata",
+          runAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          intervalMinutes: 10080
+        })
+      });
+      const apiScheduledBody = await apiScheduled.json();
+      assert.equal(apiScheduled.status, 201, JSON.stringify(apiScheduledBody));
+      const listSchedules = await fetch(baseUrl + "/api/agent/schedules", { headers: { cookie: first.cookie } });
+      assert.equal(listSchedules.status, 200);
+      assert.ok((await listSchedules.json()).schedules.some(item => item.id === apiScheduledBody.schedule.id));
+      const pauseSchedule = await fetch(baseUrl + `/api/agent/schedules/${apiScheduledBody.schedule.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ enabled: false })
+      });
+      assert.equal(pauseSchedule.status, 200);
+      const resumeSchedule = await fetch(baseUrl + `/api/agent/schedules/${apiScheduledBody.schedule.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ enabled: true })
+      });
+      assert.equal(resumeSchedule.status, 200);
+      const scheduleDelete = await fetch(baseUrl + `/api/agent/schedules/${apiScheduledBody.schedule.id}`, {
+        method: "DELETE",
+        headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+      });
+      assert.equal(scheduleDelete.status, 200);
 
       const conversation = await pool.query(
         "INSERT INTO conversations (user_id,title) VALUES ($1,$2) RETURNING id",
