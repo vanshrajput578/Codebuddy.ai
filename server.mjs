@@ -383,7 +383,7 @@ app.delete("/api/providers/:provider", noStore, sameOriginOnly, dbRequired, requ
   }
 });
 
-app.put("/api/providers/active", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+app.put("/api/provider-selection", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
   const provider = req.body?.provider;
   if (!providerNames.includes(provider)) return res.status(400).json({ error: "Unsupported provider." });
   try {
