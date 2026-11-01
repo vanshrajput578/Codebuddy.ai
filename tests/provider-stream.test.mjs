@@ -26,3 +26,46 @@ test("stream adapter sends streaming OpenAI-compatible request and yields deltas
     assert.equal(captured.body.messages.at(-1).content, "Hi");
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("Gemini, OpenRouter and Anthropic stream adapters use their provider protocols", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), headers: options.headers, body: JSON.parse(options.body) });
+    const provider = String(url).includes("generativelanguage") ? "gemini" : String(url).includes("openrouter") ? "openrouter" : "anthropic";
+    const payload = provider === "gemini"
+      ? 'data: {"candidates":[{"content":{"parts":[{"text":"Gemini"}]}}]}\\n\\n'
+      : provider === "openrouter"
+        ? 'data: {"choices":[{"delta":{"content":"Router"}}]}\\n\\ndata: [DONE]\\n\\n'
+        : 'event: content_block_delta\\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude"}}\\n\\n';
+    return new Response(payload, { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  try {
+    const outputs = {};
+    for (const provider of ["gemini", "openrouter", "anthropic"]) {
+      outputs[provider] = [];
+      for await (const chunk of streamProviderResponse(provider, "provider-test-key-123", "model-test", "hello")) outputs[provider].push(chunk);
+    }
+    assert.deepEqual(outputs, { gemini: ["Gemini"], openrouter: ["Router"], anthropic: ["Claude"] });
+    assert.ok(calls[0].url.includes(":streamGenerateContent"));
+    assert.equal(calls[1].body.stream, true);
+    assert.equal(calls[2].body.stream, true);
+    assert.equal(calls[2].headers["anthropic-version"], "2023-06-01");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("stream adapter retries one transient provider response before streaming", async () => {
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) return new Response("busy", { status: 503 });
+    return new Response('data: {"choices":[{"delta":{"content":"Recovered"}}]}\\n\\ndata: [DONE]\\n\\n', { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  try {
+    const chunks = [];
+    for await (const chunk of streamProviderResponse("openai", "provider-test-key-123", "model-test", "hello")) chunks.push(chunk);
+    assert.deepEqual(chunks, ["Recovered"]);
+    assert.equal(attempts, 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
