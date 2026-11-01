@@ -24,7 +24,17 @@
 <div class="sidebar-bottom"><div class="connection"><span class="status-dot"></span><div><b>Secure API</b><small>Server-side provider connection</small></div></div><a class="settings-link" href="./docs/ARCHITECTURE.md">Architecture & docs ↗</a></div>
 </aside>
 <main class="main">
-<header class="topbar"><button class="icon-button mobile-menu" id="menuToggle" aria-label="Toggle menu">☰</button><div class="breadcrumb">Workspace <span>/</span> <b id="pageName">AI Workspace</b></div><div class="top-actions"><span class="mode-pill"><i></i> Secure API mode</span><button class="avatar" title="Local preview">V</button></div></header>
+<header class="topbar"><button class="icon-button mobile-menu" id="menuToggle" aria-label="Toggle menu">☰</button><div class="breadcrumb">Workspace <span>/</span> <b id="pageName">AI Workspace</b></div><div class="top-actions">
+  <span class="mode-pill"><i></i> Secure API mode</span>
+  <div class="notification-anchor">
+    <button class="notification-toggle" id="notificationToggle" type="button" aria-label="Open notifications">Inbox <span id="notificationCount">0</span></button>
+    <section class="notification-panel hidden" id="notificationPanel" aria-label="Notifications">
+      <div class="notification-heading"><b>Notifications</b><button id="markAllNotificationsRead" type="button">Mark all read</button></div>
+      <div id="notificationList"><p class="provider-empty">Sign in to load notifications.</p></div>
+    </section>
+  </div>
+  <button class="avatar" title="Account">V</button>
+</div></header>
 <section class="content" id="chatView">
 <div class="welcome"><div class="orb"><span>✳</span></div><p class="eyebrow">YOUR AUTONOMOUS WORKSPACE</p><h1>Make room for<br><span>what's next.</span></h1><p class="subheading">A unified space for thinking, building and getting work done with AI.</p>
 <div class="notice"><span>ⓘ</span><div><b>Preview environment</b><p>Chat requests are sent to your same-origin backend. Provider credentials remain on the server and are never included in browser code.</p></div></div></div>
@@ -93,5 +103,24 @@
     <div class="agent-task-list"><div class="agent-section-heading"><h2>Your tasks</h2><button class="provider-secondary" id="refreshAgentTasks" type="button">Refresh</button></div><div id="agentTaskList"><p class="provider-empty">Sign in to load tasks.</p></div></div>
     <div class="agent-task-detail" id="agentTaskDetail"><div class="agent-empty"><span>◷</span><b>Select a task</b><small>Plans and execution events will appear here.</small></div></div>
   </div>
+  <section class="automation-panel">
+    <div class="agent-section-heading"><h2>Scheduled workflows</h2><button class="provider-secondary" id="refreshSchedules" type="button">Refresh</button></div>
+    <p class="file-help">One-time or recurring tasks are queued by the separate NEXUS worker. Every generated plan still requires your approval before execution.</p>
+    <form id="scheduleForm" class="schedule-form">
+      <label class="auth-field">Workflow title<input id="scheduleTitle" maxlength="120" required placeholder="e.g. Weekly project review"></label>
+      <label class="auth-field">Task instructions<textarea id="schedulePrompt" rows="3" maxlength="8000" required placeholder="Describe what NEXUS should prepare each time..."></textarea></label>
+      <div class="schedule-input-grid">
+        <label class="auth-field">First run<input id="scheduleRunAt" type="datetime-local" required></label>
+        <label class="auth-field">Repeat<select id="scheduleInterval">
+          <option value="">Once only</option><option value="15">Every 15 minutes</option><option value="60">Every hour</option><option value="360">Every 6 hours</option><option value="1440">Every day</option><option value="10080">Every week</option>
+        </select></label>
+      </div>
+      <label class="auth-field">Timezone<input id="scheduleTimezone" maxlength="64" value="Asia/Kolkata" required></label>
+      <button class="auth-submit" id="createSchedule" type="submit">Schedule workflow</button>
+      <p class="auth-error" id="scheduleError" role="alert"></p>
+      <p class="provider-success" id="scheduleSuccess" role="status"></p>
+    </form>
+    <div id="scheduleList"><p class="provider-empty">Sign in to load scheduled workflows.</p></div>
+  </section>
 </section>
 </main></div><script src="./app.js"></script></body></html>
