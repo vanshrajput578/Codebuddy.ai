@@ -69,4 +69,4 @@ The credential vault uses one server master key. Back it up securely; losing it 
 - Pause, resume, reject and cancel endpoints are authenticated, CSRF-protected and user-scoped.
 - Resume requires an existing approval timestamp; execution refuses tasks without one.
 - Tasks left running during a server restart are transactionally moved to paused and require explicit resume.
-- No shell, browser, arbitrary HTTP, filesystem or device-control tool is exposed.
+- The only external computer capability currently exposed is approval-gated, read-only `browser.open`; shell execution, arbitrary HTTP, filesystem access and device control remain unavailable.
