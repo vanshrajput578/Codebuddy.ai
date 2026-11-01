@@ -40,7 +40,7 @@ Build with `docker build -f computer/Dockerfile -t nexus-browser-worker .`. Star
 
 ## Remaining production requirements
 
-Email verification, password reset, account deletion, per-user AI quotas, managed KMS/envelope encryption, key rotation, database backups/restore tests, monitoring and independent security review are not complete. Agent execution, Android and isolated computer-use workers are also not implemented.
+Email verification, password reset, account deletion, per-user AI quotas, managed KMS/envelope encryption, key rotation, database backups/restore tests, monitoring and independent security review are not complete. Browser/terminal code is present, but a production egress proxy, dedicated Docker sandbox daemon/VM and independent network-isolation review have not been verified.
 
 The credential vault uses one server master key. Back it up securely; losing it makes saved credentials unrecoverable. Rotate it only with a deliberate re-encryption migration.
 
@@ -69,4 +69,20 @@ The credential vault uses one server master key. Back it up securely; losing it 
 - Pause, resume, reject and cancel endpoints are authenticated, CSRF-protected and user-scoped.
 - Resume requires an existing approval timestamp; execution refuses tasks without one.
 - Tasks left running during a server restart are transactionally moved to paused and require explicit resume.
-- The only external computer capability currently exposed is approval-gated, read-only `browser.open`; shell execution, arbitrary HTTP, filesystem access and device control remain unavailable.
+- The only external computer capabilities currently exposed are approval-gated `browser.open` and `terminal.run`; terminal commands execute in a disposable no-network container with a bounded scratch workspace. Host filesystem access, arbitrary HTTP and device control remain unavailable.
+
+## Phase 6 terminal sandbox
+
+The dedicated terminal controller runs on a sandbox VM/host and needs access to a Docker daemon. Docker daemon access is effectively host-admin privilege. Do not run the controller with access to the main API/database host's Docker socket; use a dedicated daemon/VM and keep its control endpoint private.
+
+The controller starts one disposable container per job with:
+- `--network none`, no port publishing and no host mounts.
+- Read-only root filesystem, unprivileged UID/GID 10001, all capabilities dropped and no-new-privileges.
+- 256 MiB memory, 0.5 CPU, 64 PIDs, 64 MiB workspace tmpfs and 16 MiB temporary tmpfs.
+- A hard command timeout of 15 seconds; process-group cleanup; a named Docker container removed on controller timeout.
+- 10 jobs/minute per user, two global concurrent jobs, up to 30 input files, 256 KiB per file and 1 MiB total workspace transfer.
+- No database or provider credentials, host directory mounts, or network connectivity inside the sandbox.
+
+Each invocation is disposable. Files are provided explicitly as bounded base64 inputs and returned as bounded outputs; do not treat this scratch workspace as durable or as a backup. The terminal controller uses a private bearer token; the planner marks every `terminal.run` action approval-required and validates `replanAfter=true`. The server performs the network call outside the PostgreSQL task transaction and verifies the task lease/state before persisting its result.
+
+CI can test request validation, path traversal policy and controller contracts. It cannot prove the deployed Docker daemon, kernel, firewall, storage quotas or host isolation are correctly configured; those require deployment-time security verification.
