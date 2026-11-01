@@ -1013,6 +1013,29 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   }
 });
 
+app.get("/api/files", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT f.id,f.task_id,f.path,f.size_bytes,f.created_at,f.updated_at,t.title AS task_title
+       FROM agent_task_files f
+       INNER JOIN agent_tasks t ON t.id=f.task_id AND t.user_id=f.user_id
+       WHERE f.user_id=$1
+       ORDER BY f.updated_at DESC,f.path ASC
+       LIMIT 500`,
+      [req.auth.id]
+    );
+    return res.json({
+      files: result.rows.map(file => ({
+        id: file.id, taskId: file.task_id, taskTitle: file.task_title,
+        path: file.path, sizeBytes: file.size_bytes,
+        createdAt: file.created_at, updatedAt: file.updated_at
+      }))
+    });
+  } catch {
+    return res.status(503).json({ error: "Could not load your files." });
+  }
+});
+
 app.get("/api/agent/tasks/:id/files", noStore, dbRequired, requireAuth, async (req, res) => {
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   try {
@@ -1055,6 +1078,24 @@ app.get("/api/agent/tasks/:id/files/:fileId", noStore, dbRequired, requireAuth, 
     });
   } catch {
     return res.status(503).json({ error: "Could not read task workspace file." });
+  }
+});
+
+app.delete("/api/agent/tasks/:id/files/:fileId", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id) || !validUuid(req.params.fileId)) return res.status(400).json({ error: "Invalid file reference." });
+  try {
+    const result = await pool.query(
+      "DELETE FROM agent_task_files WHERE id=$1 AND task_id=$2 AND user_id=$3 RETURNING id,path",
+      [req.params.fileId, req.params.id, req.auth.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Workspace file not found." });
+    await pool.query(
+      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'workspace.file_deleted',$2::jsonb)",
+      [req.params.id, JSON.stringify({ path: result.rows[0].path, actor: "user" })]
+    );
+    return res.json({ ok: true });
+  } catch {
+    return res.status(503).json({ error: "Could not delete workspace file." });
   }
 });
 
