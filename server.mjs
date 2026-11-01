@@ -520,8 +520,8 @@ async function replanAgentTask(taskId, userId, leaseToken) {
     "Use 1 to " + (maxAgentSteps - completedCount) + " steps and always end with response.compose. Set replanAfter=true only on a non-final step when another evidence-driven continuation is necessary.",
     "Original user task: " + task.prompt,
     "Completed tool evidence (JSON): " + JSON.stringify(evidence).slice(0, 12000),
-    "Available tools:\\n" + getAgentToolPrompt()
-  ].join("\\n");
+    "Available tools:\n" + getAgentToolPrompt()
+  ].join("\n");
   const rawContinuation = await callProvider(task.provider, credential.key, credential.model, planningPrompt, []);
   const continuation = parseAgentPlan(rawContinuation);
   if (continuation.steps.at(-1).tool !== "response.compose") throw new Error("A continuation plan must end with response.compose.");
@@ -1066,11 +1066,11 @@ app.post("/api/chat/stream", noStore, sameOriginOnly, dbRequired, chatLimiter, r
       "X-Accel-Buffering": "no"
     });
     res.flushHeaders?.();
-    res.write(`event: meta\\ndata: ${JSON.stringify({ requestId, provider: selectedProvider, model: modelName })}\\n\\n`);
+    res.write(`event: meta\ndata: ${JSON.stringify({ requestId, provider: selectedProvider, model: modelName })}\n\n`);
     for await (const chunk of streamProviderResponse(selectedProvider, credential.key, modelName, message.trim(), history, { signal: abortController.signal })) {
       if (abortController.signal.aborted || res.destroyed) throw new Error("Stream cancelled.");
       output += chunk;
-      res.write(`event: delta\\ndata: ${JSON.stringify({ text: chunk })}\\n\\n`);
+      res.write(`event: delta\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
     }
     if (!output.trim()) throw new Error("Provider returned an empty response.");
     const client = await pool.connect();
@@ -1089,7 +1089,7 @@ app.post("/api/chat/stream", noStore, sameOriginOnly, dbRequired, chatLimiter, r
     } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
     finally { client.release(); }
     outcome = "success";
-    res.write(`event: done\\ndata: ${JSON.stringify({ conversationId, requestId, outputChars: output.length, durationMs: Date.now()-startedAt })}\\n\\n`);
+    res.write(`event: done\ndata: ${JSON.stringify({ conversationId, requestId, outputChars: output.length, durationMs: Date.now()-startedAt })}\n\n`);
     return res.end();
   } catch (error) {
     const cancelled = abortController.signal.aborted || res.destroyed;
@@ -1099,7 +1099,7 @@ app.post("/api/chat/stream", noStore, sameOriginOnly, dbRequired, chatLimiter, r
       await pool.query("INSERT INTO provider_usage (user_id,provider,model_name,conversation_id,request_id,input_chars,output_chars,duration_ms,outcome,error_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (user_id,request_id) DO NOTHING", [req.auth.id, selectedProvider, modelName, conversationId, requestId, message.length, output.length, Date.now()-startedAt, outcome, errorCode]).catch(() => {});
     }
     if (!res.headersSent) return res.status(502).json({ error: "AI provider request failed. Check provider settings and retry." });
-    if (!res.destroyed) { res.write(`event: error\\ndata: ${JSON.stringify({ error: cancelled ? "Stream cancelled." : "AI provider stream failed.", requestId })}\\n\\n`); res.end(); }
+    if (!res.destroyed) { res.write(`event: error\ndata: ${JSON.stringify({ error: cancelled ? "Stream cancelled." : "AI provider stream failed.", requestId })}\n\n`); res.end(); }
   }
 });
 
