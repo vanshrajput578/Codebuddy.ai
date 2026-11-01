@@ -138,7 +138,6 @@ async function loadConversation(id){
     conversationId=id;
     messages.replaceChildren();
     for(const item of (data.messages||[]))addMessage(item.content,item.role==='user'?'user':'system');
-    document.querySelectorAll('.conversation-item').forEach(item=>item.classList.toggle('active',item.textContent===document.querySelector('.conversation-item.active')?.textContent));
     showView('chat');
     loadConversations();
   }catch(error){addMessage(error.message||'Could not open conversation.','system');}
