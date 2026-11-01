@@ -1,7 +1,7 @@
 name: Android checks
 on:
   push:
-    branches: [main, phase-5/android-client]
+    branches: [main, phase-5/android-client, phase-5/android-voice-input]
     paths: ["android/**"]
   pull_request:
     paths: ["android/**"]
