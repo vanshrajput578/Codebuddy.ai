@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   status VARCHAR(24) NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued','planning','awaiting_approval','running','paused','completed','failed','cancelled')),
   plan JSONB NOT NULL DEFAULT '[]'::jsonb,
-  current_step INTEGER NOT NULL DEFAULT 0 CONSTRAINT agent_tasks_current_step_range CHECK (current_step BETWEEN 0 AND 5),
+  current_step INTEGER NOT NULL DEFAULT 0 CONSTRAINT agent_tasks_current_step_range CHECK (current_step BETWEEN 0 AND 8),
+  replan_count INTEGER NOT NULL DEFAULT 0 CONSTRAINT agent_tasks_replan_count_range CHECK (replan_count BETWEEN 0 AND 2),
   result TEXT,
   approved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

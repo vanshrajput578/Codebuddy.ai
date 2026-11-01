@@ -8,9 +8,10 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 
 - Implemented in code: registration/login, scrypt password hashing, opaque session cookies, CSRF checks, user-owned conversations, encrypted provider-key storage, provider selection and four provider adapters (Gemini, OpenAI, OpenRouter, Anthropic).
 - Automated verification: syntax checks, isolated API security tests, PostgreSQL integration tests and Gitleaks secret scanning run in GitHub Actions.
-- Implemented: durable task queue, provider-assisted bounded planner, allowlisted memory/search/response tools, explicit approval gate, background execution, task history UI, pause/resume/reject/cancel controls and user-scoped memory CRUD.
-- Agent limitation: no shell, browser, arbitrary HTTP, filesystem or device-control tools; no advanced model replanning or distributed worker service.
-- Not implemented: Android client, computer-use sandbox, multi-agent delegation and scheduled automations.
+- Implemented: PostgreSQL-backed task records and event history, provider-assisted planner (maximum eight steps), allowlisted tools, explicit plan approval, pause/resume/reject/cancel controls, persisted tool results, evidence-driven replanning (maximum two rounds), and fresh approval when a continuation introduces a write.
+- Agent execution boundary: execution currently runs in-process after the request is accepted. Restart recovery pauses interrupted tasks; a separately supervised durable worker with leases/heartbeats is not implemented yet. No shell, browser, arbitrary HTTP, filesystem or device-control tools are exposed.
+- Implemented on the Phase 5 branch: native Kotlin/Jetpack Compose Android client for authentication, encrypted session-cookie storage, chat/history, provider settings and agent task creation/plan approval/lifecycle controls. Latest Android CI on branch head `b351da1` passed and uploaded a debug APK artifact (10.4 MiB); no signed release APK or physical-device QA is verified.
+- Not implemented: computer-use sandbox, multi-agent delegation and scheduled automations.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
 
 ## Local setup
@@ -58,7 +59,7 @@ This repository is not yet production-ready for public multi-user traffic. Befor
 - `POST /api/providers/:provider/test`.
 - `GET/POST /api/memory`, `PUT/DELETE /api/memory/:id`: user-scoped persistent memory CRUD.
 - `GET/POST /api/agent/tasks`, `GET /api/agent/tasks/:id`: user-scoped task queue and event history.
-- `POST /api/agent/tasks/:id/plan`: generate and validate a plan of at most five allowlisted steps.
+- `POST /api/agent/tasks/:id/plan`: generate and validate a plan of at most eight allowlisted steps; evidence-driven continuation is capped at two replanning rounds and eight total steps.
 - `POST /api/agent/tasks/:id/approve`, `/reject`, `/pause`, `/resume`, `/cancel`: explicit task lifecycle controls. Execution starts only after approval.
 - `POST /api/chat`: calls the selected provider and persists the conversation.
 
