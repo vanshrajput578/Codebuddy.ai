@@ -605,7 +605,7 @@ async function runAgentTask(taskId, userId) {
   } finally {
     activeAgentTasks.delete(taskId);
     const current = await pool.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [taskId, userId]).catch(() => ({ rows: [] }));
-    if (current.rows[0]?.status === "running") setImmediate(() => runAgentTask(taskId, userId));
+    if (current.rows[0]?.status === "running") setImmediate(() => runAgentTask(taskId, userId).catch(() => {}));
   }
 }
 
@@ -808,7 +808,7 @@ app.post("/api/agent/tasks/:id/approve", noStore, sameOriginOnly, dbRequired, re
     }
     await appendTaskEvent(client, req.params.id, "task.approved", { actor: "user", status: "running" });
     await client.query("COMMIT");
-    setImmediate(() => runAgentTask(req.params.id, req.auth.id));
+    setImmediate(() => runAgentTask(req.params.id, req.auth.id).catch(() => {}));
     return res.status(202).json({ task: updated.rows[0] });
   } catch {
     await client.query("ROLLBACK").catch(() => {});
