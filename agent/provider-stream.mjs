@@ -20,8 +20,8 @@ async function* readSse(response, extract, signal) {
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
       buffer = buffer.replace(/\r\n/g, "\n");
       let boundary;
-      while ((boundary = buffer.indexOf("\\n\\n")) >= 0) {
-        const frame = buffer.slice(0, boundary).replace(/\\r/g, "");
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary).replace(/\r/g, "");
         buffer = buffer.slice(boundary + 2);
         const data = extractSseData(frame);
         if (data === "[DONE]") return;
