@@ -25,7 +25,7 @@ class NexusApi(context: Context) {
 
     private fun validOrigin(value: String): Boolean {
         val uri = runCatching { java.net.URI(value) }.getOrNull() ?: return false
-        return uri.host != null && uri.rawPath.orEmpty().let { it.isEmpty() || it == "/" } &&
+        return uri.host != null && uri.rawUserInfo == null && uri.rawPath.orEmpty().let { it.isEmpty() || it == "/" } &&
             uri.rawQuery == null && uri.rawFragment == null &&
             uri.scheme == "https"
     }
