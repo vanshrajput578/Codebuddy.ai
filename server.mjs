@@ -865,12 +865,20 @@ app.delete("/api/memory/:id", noStore, sameOriginOnly, dbRequired, requireAuth, 
 });
 
 
+app.get("/api/agents", noStore, requireAuth, (_req, res) => {
+  return res.json({ agents: listAgentDefinitions() });
+});
+
 app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, agentLimiter, async (req, res) => {
   const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
   const titleInput = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+  const agentProfile = typeof req.body?.agentProfile === "string" ? req.body.agentProfile : "general";
   if (!prompt || prompt.length > 8000 || titleInput.length > 120) {
     return res.status(400).json({ error: "Task prompt must contain 1–8000 characters; title is limited to 120." });
   }
+  let agentDefinition;
+  try { agentDefinition = getAgentDefinition(agentProfile); }
+  catch { return res.status(400).json({ error: "Unsupported agent profile." }); }
   let workspaceFiles;
   try {
     workspaceFiles = validateAgentToolInput("terminal.run", {
@@ -885,8 +893,8 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
   try {
     await client.query("BEGIN");
     const created = await client.query(
-      "INSERT INTO agent_tasks (user_id,title,prompt,status) VALUES ($1,$2,$3,'queued') RETURNING id,title,prompt,status,plan,current_step,created_at,updated_at",
-      [req.auth.id, title, prompt]
+      "INSERT INTO agent_tasks (user_id,title,prompt,status,agent_profile,allowed_tools) VALUES ($1,$2,$3,'queued',$4,$5::jsonb) RETURNING id,title,prompt,status,agent_profile,allowed_tools,plan,current_step,created_at,updated_at",
+      [req.auth.id, title, prompt, agentDefinition.id, JSON.stringify(agentDefinition.allowedTools)]
     );
     let uploadedBytes = 0;
     for (const file of workspaceFiles) {
@@ -899,7 +907,7 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
       );
     }
     await appendTaskEvent(client, created.rows[0].id, "task.created", {
-      status: "queued", uploadedFiles: workspaceFiles.length, uploadedBytes
+      status: "queued", agentProfile: agentDefinition.id, uploadedFiles: workspaceFiles.length, uploadedBytes
     });
     await client.query("COMMIT");
     return res.status(201).json({
