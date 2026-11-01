@@ -64,3 +64,19 @@ test("static frontend is served by the same-origin backend", async () => {
   assert.match(await response.text(), /Sign in to NEXUS/);
   assert.ok(response.headers.get("content-security-policy"));
 });
+
+test("provider vault endpoints fail closed without database configuration", async () => {
+  const response = await fetch(`${baseUrl}/api/providers`);
+  assert.equal(response.status, 503);
+  assert.equal((await response.text()).includes("ciphertext"), false);
+});
+
+test("provider credential routes reject cross-origin requests before touching the database", async () => {
+  const response = await fetch(`${baseUrl}/api/providers/openai`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", origin: "https://attacker.example" },
+    body: JSON.stringify({ apiKey: "test-secret-value", model: "gpt-4.1-mini" })
+  });
+  assert.equal(response.status, 403);
+  assert.equal((await response.text()).includes("test-secret-value"), false);
+});
