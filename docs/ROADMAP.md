@@ -40,12 +40,12 @@ Acceptance: users can register and only access their own data.
 Acceptance: configured provider returns a real streamed response. Current: credential storage, selection and adapters are implemented; actual live provider calls and streaming remain unverified/not implemented.
 
 ## Phase 4 — Agent runtime and memory
-- [ ] Durable tasks and execution events.
+- [x] Add PostgreSQL-backed durable task records and execution-event history (queue foundation only).
 - [ ] Planning and bounded execution loop.
 - [ ] Tool schema validation and permission checks.
 - [ ] Approval, pause, resume and cancellation.
-- [ ] User-controlled persistent memory.
-Acceptance: tasks survive restart and restricted tools require approval.
+- [x] Add user-scoped persistent memory CRUD API.
+Acceptance: tasks survive restart and restricted tools require approval. Current: task persistence/cancellation and memory CRUD are implemented; planner/executor, tool validation and approval workflow remain incomplete.
 
 ## Phase 5 — Android
 - [ ] Expo app and shared API client.
