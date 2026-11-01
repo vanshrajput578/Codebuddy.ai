@@ -59,6 +59,61 @@ if (!process.env.DATABASE_URL) {
         body: JSON.stringify({ email: `nexus-one-${suffix}@example.test`, password: "wrong-password-123" })
       });
       assert.equal(badLogin.status, 401);
+      const memoryCreate = await fetch(baseUrl + "/api/memory", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ category: "preference", content: "Prefers concise technical explanations." })
+      });
+      assert.equal(memoryCreate.status, 201);
+      const memoryBody = await memoryCreate.json();
+      const firstMemories = await fetch(baseUrl + "/api/memory", { headers: { cookie: first.cookie } });
+      assert.equal((await firstMemories.json()).memories.length, 1);
+      const secondMemories = await fetch(baseUrl + "/api/memory", { headers: { cookie: second.cookie } });
+      assert.equal((await secondMemories.json()).memories.length, 0, "memory must be private per user");
+      const memoryUpdate = await fetch(baseUrl + `/api/memory/${memoryBody.memory.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ category: "note", content: "Updated memory note." })
+      });
+      assert.equal(memoryUpdate.status, 200);
+      const foreignMemoryDelete = await fetch(baseUrl + `/api/memory/${memoryBody.memory.id}`, {
+        method: "DELETE",
+        headers: { origin, cookie: second.cookie, "x-csrf-token": second.csrf }
+      });
+      assert.equal(foreignMemoryDelete.status, 404, "users must not delete another user's memory");
+
+      const taskCreate = await fetch(baseUrl + "/api/agent/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ title: "Integration task", prompt: "Prepare a safe project plan." })
+      });
+      assert.equal(taskCreate.status, 201);
+      const taskBody = await taskCreate.json();
+      assert.equal(taskBody.task.status, "queued");
+      const taskDetails = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}`, { headers: { cookie: first.cookie } });
+      const taskDetailsBody = await taskDetails.json();
+      assert.equal(taskDetails.status, 200);
+      assert.equal(taskDetailsBody.events[0].event_type, "task.created");
+      const foreignTask = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}`, { headers: { cookie: second.cookie } });
+      assert.equal(foreignTask.status, 404, "users must not inspect another user's task");
+      const cancelTask = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/cancel`, {
+        method: "POST",
+        headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+      });
+      assert.equal(cancelTask.status, 200);
+      assert.equal((await cancelTask.json()).task.status, "cancelled");
+      const cancelAgain = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/cancel`, {
+        method: "POST",
+        headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+      });
+      assert.equal(cancelAgain.status, 409, "terminal tasks must not be cancelled again");
+
+      const deleteMemory = await fetch(baseUrl + `/api/memory/${memoryBody.memory.id}`, {
+        method: "DELETE",
+        headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+      });
+      assert.equal(deleteMemory.status, 200);
+
       const missingCsrf = await fetch(baseUrl + "/api/providers/openai", {
         method: "PUT",
         headers: { "content-type": "application/json", origin, cookie: first.cookie },
