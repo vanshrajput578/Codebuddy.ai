@@ -88,6 +88,52 @@ if (!process.env.DATABASE_URL) {
       assert.equal(select.status, 200);
       assert.equal((await select.json()).activeProvider, "openai");
 
+      const originalFetch = globalThis.fetch;
+      let capturedProviderRequest = null;
+      globalThis.fetch = async (input, options = {}) => {
+        if (String(input) === "https://api.openai.com/v1/chat/completions") {
+          capturedProviderRequest = {
+            authorization: options.headers?.Authorization,
+            body: JSON.parse(options.body || "{}")
+          };
+          return new Response(JSON.stringify({
+            choices: [{ message: { role: "assistant", content: "NEXUS connection successful" } }]
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return originalFetch(input, options);
+      };
+      let chatConversationId;
+      try {
+        const providerTest = await originalFetch(baseUrl + "/api/providers/openai/test", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: "{}"
+        });
+        assert.equal(providerTest.status, 200, await providerTest.text());
+        assert.equal(capturedProviderRequest.authorization, `Bearer ${apiKey}`, "decrypted key must be sent only to the selected provider");
+        assert.equal(capturedProviderRequest.body.messages.at(-1).content, "Reply with exactly: NEXUS connection successful");
+
+        const firstChat = await originalFetch(baseUrl + "/api/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ message: "Remember this test phrase: blue comet." })
+        });
+        assert.equal(firstChat.status, 200, await firstChat.text());
+        const firstChatBody = await firstChat.json();
+        assert.equal(firstChatBody.answer, "NEXUS connection successful");
+        chatConversationId = firstChatBody.conversationId;
+
+        const secondChat = await originalFetch(baseUrl + "/api/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ message: "What phrase did I ask you to remember?", conversationId: chatConversationId })
+        });
+        assert.equal(secondChat.status, 200, await secondChat.text());
+        assert.ok(capturedProviderRequest.body.messages.some(item => item.content.includes("blue comet.")), "chat history must be sent as provider context");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
       const conversation = await pool.query(
         "INSERT INTO conversations (user_id,title) VALUES ($1,$2) RETURNING id",
         [first.user.id, "Integration conversation"]
