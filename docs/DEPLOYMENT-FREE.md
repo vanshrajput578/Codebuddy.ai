@@ -49,7 +49,7 @@ Keep a secure offline backup. If this key is lost, saved provider API keys canno
 5. Run the complete contents of `db/schema.sql` once. This initializes all NEXUS tables.
 6. Paste the pooled connection string into Render's `DATABASE_URL` environment variable.
 
-Do not run the full schema repeatedly against an existing database. For an older database that already has the Phase 4 agent tables, inspect the applied schema and run only the appropriate migration (currently `db/migrations/003_agent_runtime.sql`) if needed.
+Do not run the full schema repeatedly against an existing database. For an older database that already has the Phase 4 agent tables, inspect the applied schema and run the applicable migrations in order, including `db/migrations/004_agent_step_limit.sql` for the eight-step agent limit, if needed.
 
 ## Deployment sequence
 
