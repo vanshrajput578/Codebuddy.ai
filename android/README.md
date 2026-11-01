@@ -27,7 +27,7 @@ The server-issued HttpOnly session cookie is persisted encrypted with an AES key
 Only HTTPS origins are accepted in release builds. Cleartext HTTP is allowed in debug builds only for Android emulator loopback (10.0.2.2) and localhost.
 
 ## Current limitations
-- Chat history list and conversation switching are not yet exposed in the mobile UI; chat retains the active conversation ID.
-- Task creation and plan generation remain in the web UI; Android currently monitors and controls existing tasks.
+- Push notifications, biometric re-authentication, offline queueing and Play Store signing are not implemented.
+- Android supports creating tasks, generating plans, inspecting each step and approving/rejecting or controlling existing tasks.
 - Push notifications, biometric re-authentication, offline queueing and Play Store signing are not implemented.
 - This app is a client for a deployed backend; no public production API URL is configured in this repository.
