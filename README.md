@@ -63,6 +63,19 @@ The browser worker is a separate containerized Playwright service. It is read-on
 
 The internal service accepts `POST /execute` with a bearer token and `{userId,url}`; it permits HTTP(S), GET/HEAD only, blocks WebSockets/downloads, caps navigation at 12 seconds and 40 requests, extracts at most 12,000 characters, and allows six jobs per user per minute. It creates and closes a new browser context for every job. `GET /health` reports only idle/busy state.
 
+```bash
+docker run -d --name nexus-browser-worker \
+  --network nexus-internal --init --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=256m --shm-size=512m \
+  --memory=1g --cpus=1 --pids-limit=128 --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  -e BROWSER_WORKER_TOKEN="$BROWSER_WORKER_TOKEN" \
+  -e BROWSER_EGRESS_PROXY="http://egress-proxy:3128" \
+  nexus-browser-worker
+```
+
+The example assumes `nexus-internal` and an egress proxy already exist. Enforce an egress firewall so the browser container can connect only to that proxy; the proxy must deny unsafe destination IPs after DNS resolution. Do not use an unrestricted forward proxy.
+
 This increment delivers the isolated browser runtime and policy layer. The `browser.open` agent tool and UI integration are the next implementation slice; they will call this service outside database transactions and require plan approval.
 
 ## Current API
