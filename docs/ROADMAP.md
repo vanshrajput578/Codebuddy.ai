@@ -34,8 +34,8 @@ Acceptance: users can register and only access their own data.
 - [x] Add per-user AES-256-GCM encrypted provider credential storage.
 - [x] Add provider settings UI, per-user provider selection and credential deletion.
 - [x] Add provider request timeouts and PostgreSQL-backed integration coverage.
-- [ ] Model capability registry.
-- [ ] Streaming chat and usage/error reporting.
+- [x] Model capability registry for Gemini, OpenAI, OpenRouter and Anthropic (streaming, tools, vision, JSON mode, defaults and known model limits).
+- [x] Authenticated SSE streaming chat for Gemini, OpenAI, OpenRouter and Anthropic, including bounded transient retries, timeout/cancellation handling, persisted usage/error telemetry and a streaming web composer.
 - [x] Add authenticated provider connection test endpoint.
 Acceptance: configured provider returns a real streamed response. Current: credential storage, selection and adapters are implemented; actual live provider calls and streaming remain unverified/not implemented.
 
