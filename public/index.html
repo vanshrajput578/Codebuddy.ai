@@ -55,7 +55,7 @@
 <div class="security-note"><b>Security boundary</b><span>Keys are encrypted with AES-256-GCM using a server-only master key. The browser receives only a masked configured status. Never paste a key into a public issue or chat.</span></div>
 <form id="providerForm" class="provider-form">
 <label class="auth-field">Provider<select id="providerSelect"><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option></select></label>
-<label class="auth-field">Model ID<input id="providerModel" maxlength="120" required value="gemini-2.5-flash" autocomplete="off"></label>
+<label class="auth-field">Model ID<input id="providerModel" maxlength="120" required value="gemini-3.8-flash" autocomplete="off"></label>
 <label class="auth-field">API key<input id="providerKey" type="password" maxlength="512" required autocomplete="new-password" placeholder="Paste provider key"></label>
 <div class="provider-actions"><button class="auth-submit" id="saveProvider" type="submit">Encrypt & save key</button><button class="provider-secondary" id="testProvider" type="button">Test connection</button><button class="provider-danger" id="deleteProvider" type="button">Remove key</button></div>
 <p class="auth-error" id="providerError" role="alert"></p><p class="provider-success" id="providerSuccess" role="status"></p>

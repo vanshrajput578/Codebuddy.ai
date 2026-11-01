@@ -10,6 +10,9 @@ import {
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { listProviderCapabilities } from "./agent/provider-capabilities.mjs";
+import { streamProviderResponse } from "./agent/provider-stream.mjs";
 import { executeAgentTool as runRegisteredAgentTool, getAgentToolPrompt, getAgentToolNames, isAgentToolApprovalRequired, validateAgentToolInput, composeAgentResult } from "./agent/tool-registry.mjs";
 
 const { Pool } = pg;
@@ -347,7 +350,7 @@ app.get("/api/providers", noStore, dbRequired, requireAuth, async (req, res) => 
         configured: true, keyHint: "••••••••", updatedAt: row.updated_at
       })),
       activeProvider: selected.rows[0]?.provider || null,
-      supported: providerNames.map(id => ({ id, name: providerLabels[id], defaultModel: providerDefaults[id] }))
+      supported: listProviderCapabilities()
     });
   } catch {
     return res.status(503).json({ error: "Could not load provider settings." });
@@ -517,8 +520,8 @@ async function replanAgentTask(taskId, userId, leaseToken) {
     "Use 1 to " + (maxAgentSteps - completedCount) + " steps and always end with response.compose. Set replanAfter=true only on a non-final step when another evidence-driven continuation is necessary.",
     "Original user task: " + task.prompt,
     "Completed tool evidence (JSON): " + JSON.stringify(evidence).slice(0, 12000),
-    "Available tools:\\n" + getAgentToolPrompt()
-  ].join("\\n");
+    "Available tools:\n" + getAgentToolPrompt()
+  ].join("\n");
   const rawContinuation = await callProvider(task.provider, credential.key, credential.model, planningPrompt, []);
   const continuation = parseAgentPlan(rawContinuation);
   if (continuation.steps.at(-1).tool !== "response.compose") throw new Error("A continuation plan must end with response.compose.");
@@ -1011,6 +1014,93 @@ app.delete("/api/conversations/:id", noStore, sameOriginOnly, dbRequired, requir
     return res.json({ ok: true });
   } catch {
     return res.status(503).json({ error: "Could not delete conversation." });
+  }
+});
+
+
+app.get("/api/providers/usage", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT provider,model_name,COUNT(*)::int AS requests,
+              COUNT(*) FILTER (WHERE outcome='success')::int AS successes,
+              COUNT(*) FILTER (WHERE outcome='error')::int AS errors,
+              COALESCE(SUM(input_chars),0)::bigint AS input_chars,
+              COALESCE(SUM(output_chars),0)::bigint AS output_chars,
+              COALESCE(AVG(duration_ms),0)::int AS average_duration_ms
+       FROM provider_usage WHERE user_id=$1 AND created_at > now()-interval '30 days'
+       GROUP BY provider,model_name ORDER BY requests DESC`,
+      [req.auth.id]
+    );
+    return res.json({ usage: result.rows, windowDays: 30 });
+  } catch { return res.status(503).json({ error: "Could not load provider usage." }); }
+});
+
+app.post("/api/chat/stream", noStore, sameOriginOnly, dbRequired, chatLimiter, requireAuth, requireCsrf, async (req, res) => {
+  const message = req.body?.message;
+  const requestedConversationId = req.body?.conversationId || null;
+  if (typeof message !== "string" || !message.trim() || message.length > 8000) return res.status(400).json({ error: "Message must be between 1 and 8000 characters." });
+  if (requestedConversationId && !validUuid(requestedConversationId)) return res.status(400).json({ error: "Invalid conversation ID." });
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const abortController = new AbortController();
+  req.once("aborted", () => abortController.abort());
+  res.once("close", () => { if (!res.writableEnded) abortController.abort(); });
+  let selectedProvider, modelName, conversationId = requestedConversationId, output = "", outcome = "error", errorCode = "provider_error";
+  try {
+    const active = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
+    selectedProvider = active.rows[0]?.provider;
+    if (!selectedProvider) return res.status(409).json({ error: "Configure an AI provider in Settings first." });
+    const credential = await getProviderCredential(req.auth.id, selectedProvider);
+    if (!credential) return res.status(409).json({ error: "The selected provider key is missing." });
+    modelName = credential.model;
+    let history = [];
+    if (conversationId) {
+      const owned = await pool.query("SELECT id FROM conversations WHERE id=$1 AND user_id=$2", [conversationId, req.auth.id]);
+      if (!owned.rowCount) return res.status(404).json({ error: "Conversation not found." });
+      const prior = await pool.query("SELECT role,content FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12", [conversationId]);
+      history = prior.rows.reverse().map(item => ({ role: item.role === "assistant" ? "model" : "user", parts: [{ text: item.content.slice(0, 6000) }] }));
+    }
+    res.status(200).set({
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    res.flushHeaders?.();
+    res.write(`event: meta\ndata: ${JSON.stringify({ requestId, provider: selectedProvider, model: modelName })}\n\n`);
+    for await (const chunk of streamProviderResponse(selectedProvider, credential.key, modelName, message.trim(), history, { signal: abortController.signal })) {
+      if (abortController.signal.aborted || res.destroyed) throw new Error("Stream cancelled.");
+      output += chunk;
+      res.write(`event: delta\ndata: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    if (!output.trim()) throw new Error("Provider returned an empty response.");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (!conversationId) {
+        const title = message.trim().replace(/\\s+/g, " ").slice(0, 80);
+        const created = await client.query("INSERT INTO conversations (user_id,title) VALUES ($1,$2) RETURNING id", [req.auth.id, title || "New conversation"]);
+        conversationId = created.rows[0].id;
+      } else {
+        await client.query("UPDATE conversations SET updated_at=now() WHERE id=$1 AND user_id=$2", [conversationId, req.auth.id]);
+      }
+      await client.query("INSERT INTO messages (conversation_id,role,content) VALUES ($1,'user',$2),($1,'assistant',$3)", [conversationId, message.trim(), output.trim()]);
+      await client.query("INSERT INTO provider_usage (user_id,provider,model_name,conversation_id,request_id,input_chars,output_chars,duration_ms,outcome) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'success')", [req.auth.id, selectedProvider, modelName, conversationId, requestId, message.length, output.length, Date.now()-startedAt]);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
+    finally { client.release(); }
+    outcome = "success";
+    res.write(`event: done\ndata: ${JSON.stringify({ conversationId, requestId, outputChars: output.length, durationMs: Date.now()-startedAt })}\n\n`);
+    return res.end();
+  } catch (error) {
+    const cancelled = abortController.signal.aborted || res.destroyed;
+    outcome = cancelled ? "cancelled" : "error";
+    errorCode = cancelled ? "cancelled" : "provider_error";
+    if (selectedProvider && modelName) {
+      await pool.query("INSERT INTO provider_usage (user_id,provider,model_name,conversation_id,request_id,input_chars,output_chars,duration_ms,outcome,error_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (user_id,request_id) DO NOTHING", [req.auth.id, selectedProvider, modelName, conversationId, requestId, message.length, output.length, Date.now()-startedAt, outcome, errorCode]).catch(() => {});
+    }
+    if (!res.headersSent) return res.status(502).json({ error: "AI provider request failed. Check provider settings and retry." });
+    if (!res.destroyed) { res.write(`event: error\ndata: ${JSON.stringify({ error: cancelled ? "Stream cancelled." : "AI provider stream failed.", requestId })}\n\n`); res.end(); }
   }
 });
 

@@ -11,7 +11,8 @@
     "worker": "node agent/worker.mjs",
     "dev": "node --watch server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check agent/worker.mjs && node --check agent/worker-queue.mjs && node --check agent/tool-registry.mjs && node --check app.js && node --check public/app.js && node --check tests/security.test.mjs && node --check tests/postgres.integration.test.mjs && node --check tests/agent-tool-registry.test.mjs"
+    "check": "node --check server.mjs && node --check agent/worker.mjs && node --check agent/worker-queue.mjs && node --check agent/tool-registry.mjs && node --check app.js && node --check public/app.js && node --check tests/security.test.mjs && node --check tests/postgres.integration.test.mjs && node --check tests/agent-tool-registry.test.mjs && node --check agent/provider-capabilities.mjs && node --check agent/provider-stream.mjs && node --check tests/provider-capabilities.test.mjs && node --check tests/provider-stream.test.mjs && node --check scripts/provider-live-smoke.mjs",
+    "test:providers:live": "node scripts/provider-live-smoke.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
