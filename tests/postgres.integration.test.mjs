@@ -209,7 +209,17 @@ if (!process.env.DATABASE_URL) {
               { title: "Summarize the updated evidence", description: "Summarize the search result and approved save.", tool: "response.compose", input: { text: "Agent finished after dynamic replanning." } }
             ] });
           } else if (lastMessage.includes("NEXUS_AGENT_PLAN_JSON")) {
-            if (lastMessage.includes("INVALID_TOOL_TEST")) {
+            if (lastMessage.includes("BROWSER_OPEN_NO_REPLAN_TEST")) {
+              content = JSON.stringify({ steps: [
+                { title: "Inspect a public page", description: "Read a public page in the isolated browser.", tool: "browser.open", input: { url: "https://example.com/" } },
+                { title: "Summarize the page", description: "Summarize the inspected page evidence.", tool: "response.compose", input: { text: "Page reviewed." } }
+              ] });
+            } else if (lastMessage.includes("BROWSER_OPEN_VALID_TEST")) {
+              content = JSON.stringify({ steps: [
+                { title: "Inspect a public page", description: "Read a public page in the isolated browser.", tool: "browser.open", input: { url: "https://example.com/" }, replanAfter: true },
+                { title: "Summarize the page", description: "Summarize the inspected page evidence.", tool: "response.compose", input: { text: "Page reviewed." } }
+              ] });
+            } else if (lastMessage.includes("INVALID_TOOL_TEST")) {
               content = JSON.stringify({ steps: [{ title: "Unsafe step", description: "Should be rejected.", tool: "shell.exec", input: { command: "id" } }] });
             } else {
               const shouldReplan = lastMessage.includes("User task: Find my saved note");
@@ -461,6 +471,32 @@ if (!process.env.DATABASE_URL) {
         });
         assert.equal(rejectResponse.status, 200);
         assert.equal((await rejectResponse.json()).task.status, "cancelled");
+
+        const browserCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Inspect public page", prompt: "BROWSER_OPEN_VALID_TEST" })
+        });
+        const browserId = (await browserCreate.json()).task.id;
+        const browserPlan = await originalFetch(baseUrl + `/api/agent/tasks/${browserId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        const browserPlanBody = await browserPlan.json();
+        assert.equal(browserPlan.status, 200, JSON.stringify(browserPlanBody));
+        assert.equal(browserPlanBody.task.plan.steps[0].tool, "browser.open");
+        assert.equal(browserPlanBody.task.plan.steps[0].requiresApproval, true);
+        assert.equal(browserPlanBody.task.plan.steps[0].replanAfter, true);
+
+        const browserNoReplanCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+          body: JSON.stringify({ title: "Reject unsafe browser plan", prompt: "BROWSER_OPEN_NO_REPLAN_TEST" })
+        });
+        const browserNoReplanId = (await browserNoReplanCreate.json()).task.id;
+        const browserNoReplan = await originalFetch(baseUrl + `/api/agent/tasks/${browserNoReplanId}/plan`, {
+          method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+        });
+        assert.equal(browserNoReplan.status, 502, "browser output must flow through evidence-driven replanning");
 
         const invalidCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
