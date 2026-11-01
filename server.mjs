@@ -420,9 +420,146 @@ app.post("/api/providers/:provider/test", noStore, sameOriginOnly, dbRequired, r
 });
 
 
+
 const memoryCategories = new Set(["note", "preference", "project", "personal"]);
+const maxAgentSteps = 5;
+const activeAgentTasks = new Set();
+const agentToolNames = new Set(["memory.search", "memory.save", "response.compose"]);
+
 function validUuid(value) {
   return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
+}
+function parseAgentPlan(raw) {
+  const cleaned = String(raw || "").trim().replace(/^\x60\x60\x60(?:json)?\s*/i, "").replace(/\s*\x60\x60\x60$/, "");
+  let parsed;
+  try { parsed = JSON.parse(cleaned); } catch { throw new Error("Planner returned invalid JSON."); }
+  if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length < 1 || parsed.steps.length > maxAgentSteps) {
+    throw new Error("Plan must contain between 1 and 5 steps.");
+  }
+  const steps = parsed.steps.map((step, index) => {
+    if (!step || typeof step !== "object" || !agentToolNames.has(step.tool)) throw new Error("Plan contains an unsupported tool.");
+    const title = typeof step.title === "string" ? step.title.trim().slice(0, 100) : "";
+    const description = typeof step.description === "string" ? step.description.trim().slice(0, 300) : "";
+    if (!title || !description || !step.input || typeof step.input !== "object" || Array.isArray(step.input)) {
+      throw new Error("Plan step is missing required fields.");
+    }
+    let input;
+    if (step.tool === "memory.search") {
+      const query = typeof step.input.query === "string" ? step.input.query.trim() : "";
+      if (!query || query.length > 200) throw new Error("Memory search query is invalid.");
+      input = { query };
+    } else if (step.tool === "memory.save") {
+      const category = step.input.category || "note";
+      const content = typeof step.input.content === "string" ? step.input.content.trim() : "";
+      if (!memoryCategories.has(category) || !content || content.length > 4000) throw new Error("Memory save input is invalid.");
+      input = { category, content };
+    } else {
+      const text = typeof step.input.text === "string" ? step.input.text.trim() : "";
+      if (!text || text.length > 4000) throw new Error("Response composition input is invalid.");
+      input = { text };
+    }
+    return {
+      id: index + 1, title, description, tool: step.tool, input,
+      requiresApproval: step.tool === "memory.save", status: "pending"
+    };
+  });
+  return { steps, maxSteps: maxAgentSteps };
+}
+function safeAgentPlan(plan) {
+  return parseAgentPlan(JSON.stringify(plan));
+}
+async function appendTaskEvent(client, taskId, eventType, payload = {}) {
+  await client.query(
+    "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,$2,$3::jsonb)",
+    [taskId, eventType, JSON.stringify(payload)]
+  );
+}
+async function executeAgentTool(client, userId, step) {
+  if (step.tool === "memory.search") {
+    const found = await client.query(
+      "SELECT id,category,content FROM user_memories WHERE user_id=$1 AND content ILIKE $2 ORDER BY updated_at DESC LIMIT 5",
+      [userId, `%${step.input.query}%`]
+    );
+    return { memories: found.rows };
+  }
+  if (step.tool === "memory.save") {
+    const saved = await client.query(
+      "INSERT INTO user_memories (user_id,category,content) VALUES ($1,$2,$3) RETURNING id,category,content",
+      [userId, step.input.category, step.input.content]
+    );
+    return { saved: saved.rows[0] };
+  }
+  if (step.tool === "response.compose") return { text: step.input.text };
+  throw new Error("Tool permission denied.");
+}
+async function runAgentTask(taskId, userId) {
+  if (activeAgentTasks.has(taskId)) return;
+  activeAgentTasks.add(taskId);
+  try {
+    for (let iteration = 0; iteration <= maxAgentSteps; iteration += 1) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const locked = await client.query(
+          "SELECT id,status,plan,current_step FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+          [taskId, userId]
+        );
+        if (!locked.rowCount || locked.rows[0].status !== "running") {
+          await client.query("COMMIT");
+          return;
+        }
+        const task = locked.rows[0];
+        const plan = safeAgentPlan(task.plan);
+        const stepIndex = Number(task.current_step || 0);
+        if (stepIndex >= plan.steps.length) {
+          const lastResponse = [...plan.steps].reverse().find(step => step.tool === "response.compose" && step.result);
+          const resultText = lastResponse?.result?.text || "Approved plan completed.";
+          await client.query(
+            "UPDATE agent_tasks SET status='completed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3",
+            [String(resultText).slice(0, 4000), taskId, userId]
+          );
+          await appendTaskEvent(client, taskId, "task.completed", { status: "completed" });
+          await client.query("COMMIT");
+          return;
+        }
+        const step = plan.steps[stepIndex];
+        const result = await executeAgentTool(client, userId, step);
+        step.status = "completed";
+        step.result = result;
+        plan.steps[stepIndex] = step;
+        await client.query(
+          "UPDATE agent_tasks SET plan=$1::jsonb,current_step=$2,updated_at=now() WHERE id=$3 AND user_id=$4",
+          [JSON.stringify(plan), stepIndex + 1, taskId, userId]
+        );
+        await appendTaskEvent(client, taskId, "tool.executed", {
+          stepId: step.id, tool: step.tool, requiresApproval: step.requiresApproval,
+          result: JSON.stringify(result).slice(0, 1200)
+        });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        const failure = await pool.connect();
+        try {
+          await failure.query("BEGIN");
+          const owned = await failure.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE", [taskId, userId]);
+          if (owned.rowCount && owned.rows[0].status === "running") {
+            await failure.query("UPDATE agent_tasks SET status='failed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3", ["Execution failed. Review the plan and try again.", taskId, userId]);
+            await appendTaskEvent(failure, taskId, "task.failed", { reason: "A validated tool step failed." });
+          }
+          await failure.query("COMMIT");
+        } catch {
+          await failure.query("ROLLBACK").catch(() => {});
+        } finally {
+          failure.release();
+        }
+        return;
+      } finally {
+        client.release();
+      }
+    }
+  } finally {
+    activeAgentTasks.delete(taskId);
+  }
 }
 
 app.get("/api/memory", noStore, dbRequired, requireAuth, async (req, res) => {
@@ -484,6 +621,7 @@ app.delete("/api/memory/:id", noStore, sameOriginOnly, dbRequired, requireAuth, 
   }
 });
 
+
 app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, chatLimiter, async (req, res) => {
   const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
   const titleInput = typeof req.body?.title === "string" ? req.body.title.trim() : "";
@@ -495,13 +633,10 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
   try {
     await client.query("BEGIN");
     const created = await client.query(
-      "INSERT INTO agent_tasks (user_id,title,prompt,status) VALUES ($1,$2,$3,'queued') RETURNING id,title,prompt,status,plan,created_at,updated_at",
+      "INSERT INTO agent_tasks (user_id,title,prompt,status) VALUES ($1,$2,$3,'queued') RETURNING id,title,prompt,status,plan,current_step,created_at,updated_at",
       [req.auth.id, title, prompt]
     );
-    await client.query(
-      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.created',$2::jsonb)",
-      [created.rows[0].id, JSON.stringify({ status: "queued" })]
-    );
+    await appendTaskEvent(client, created.rows[0].id, "task.created", { status: "queued" });
     await client.query("COMMIT");
     return res.status(201).json({ task: created.rows[0] });
   } catch {
@@ -512,10 +647,78 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
   }
 });
 
+app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, chatLimiter, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  const started = await pool.query(
+    "UPDATE agent_tasks SET status='planning',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='queued' RETURNING id,title,prompt",
+    [req.params.id, req.auth.id]
+  );
+  if (!started.rowCount) {
+    const owned = await pool.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [req.params.id, req.auth.id]);
+    return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task is not in a plannable state." : "Task not found." });
+  }
+  try {
+    await pool.query(
+      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.planning',$2::jsonb)",
+      [req.params.id, JSON.stringify({ status: "planning" })]
+    );
+    const selected = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
+    const provider = selected.rows[0]?.provider;
+    if (!provider) throw new Error("Configure an AI provider before planning tasks.");
+    const credential = await getProviderCredential(req.auth.id, provider);
+    if (!credential) throw new Error("The selected provider key is missing.");
+    const planningPrompt = [
+      "NEXUS_AGENT_PLAN_JSON",
+      "Create a safe, short execution plan for the user's request.",
+      "Return ONLY JSON with this shape: {\"steps\":[{\"title\":string,\"description\":string,\"tool\":string,\"input\":object}]}",
+      "Allowed tools ONLY: memory.search with input {query:string}; memory.save with input {category:'note'|'preference'|'project'|'personal',content:string}; response.compose with input {text:string}.",
+      "Never propose shell, browser, network, code execution, purchases, messages, calls, account changes, or tools not in this allowlist.",
+      "Use 1 to 5 steps. Use memory.search only when relevant. memory.save is a write and will require explicit user approval. Always include one response.compose step as the final step.",
+      "User task: " + started.rows[0].prompt
+    ].join("\n");
+    const rawPlan = await callProvider(provider, credential.key, credential.model, planningPrompt, []);
+    const plan = parseAgentPlan(rawPlan);
+    if (plan.steps.at(-1).tool !== "response.compose") throw new Error("Plan must end with response.compose.");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const updated = await client.query(
+        "UPDATE agent_tasks SET status='awaiting_approval',plan=$1::jsonb,current_step=0,updated_at=now() WHERE id=$2 AND user_id=$3 AND status='planning' RETURNING id,title,prompt,status,plan,current_step,created_at,updated_at",
+        [JSON.stringify(plan), req.params.id, req.auth.id]
+      );
+      if (!updated.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Task state changed while the plan was being generated." });
+      }
+      await appendTaskEvent(client, req.params.id, "task.plan_ready", {
+        status: "awaiting_approval", stepCount: plan.steps.length,
+        approvalRequired: plan.steps.some(step => step.requiresApproval)
+      });
+      await client.query("COMMIT");
+      return res.json({ task: updated.rows[0] });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    await pool.query(
+      "UPDATE agent_tasks SET status='failed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3 AND status='planning'",
+      [String(error.message || "Planning failed.").slice(0, 300), req.params.id, req.auth.id]
+    ).catch(() => {});
+    await pool.query(
+      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.planning_failed',$2::jsonb)",
+      [req.params.id, JSON.stringify({ reason: "Planner failed or returned an invalid plan." })]
+    ).catch(() => {});
+    return res.status(502).json({ error: "Could not create a safe plan. Check your provider and try again." });
+  }
+});
+
 app.get("/api/agent/tasks", noStore, dbRequired, requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id,title,status,created_at,updated_at FROM agent_tasks WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 50",
+      "SELECT id,title,status,current_step,created_at,updated_at FROM agent_tasks WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 50",
       [req.auth.id]
     );
     return res.json({ tasks: result.rows });
@@ -528,7 +731,7 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   try {
     const task = await pool.query(
-      "SELECT id,title,prompt,status,plan,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      "SELECT id,title,prompt,status,plan,current_step,result,approved_at,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
       [req.params.id, req.auth.id]
     );
     if (!task.rowCount) return res.status(404).json({ error: "Task not found." });
@@ -542,13 +745,115 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   }
 });
 
+app.post("/api/agent/tasks/:id/approve", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updated = await client.query(
+      "UPDATE agent_tasks SET status='running',approved_at=now(),updated_at=now() WHERE id=$1 AND user_id=$2 AND status='awaiting_approval' AND jsonb_typeof(plan)='object' RETURNING id,status",
+      [req.params.id, req.auth.id]
+    );
+    if (!updated.rowCount) {
+      const owned = await client.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [req.params.id, req.auth.id]);
+      await client.query("ROLLBACK");
+      return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task is not awaiting approval." : "Task not found." });
+    }
+    await appendTaskEvent(client, req.params.id, "task.approved", { actor: "user", status: "running" });
+    await client.query("COMMIT");
+    setImmediate(() => runAgentTask(req.params.id, req.auth.id));
+    return res.status(202).json({ task: updated.rows[0] });
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(503).json({ error: "Could not approve task." });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/api/agent/tasks/:id/reject", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updated = await client.query(
+      "UPDATE agent_tasks SET status='cancelled',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='awaiting_approval' RETURNING id,status",
+      [req.params.id, req.auth.id]
+    );
+    if (!updated.rowCount) {
+      const owned = await client.query("SELECT id FROM agent_tasks WHERE id=$1 AND user_id=$2", [req.params.id, req.auth.id]);
+      await client.query("ROLLBACK");
+      return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task is not awaiting approval." : "Task not found." });
+    }
+    await appendTaskEvent(client, req.params.id, "task.rejected", { actor: "user", status: "cancelled" });
+    await client.query("COMMIT");
+    return res.json({ task: updated.rows[0] });
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(503).json({ error: "Could not reject task." });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/api/agent/tasks/:id/pause", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updated = await client.query(
+      "UPDATE agent_tasks SET status='paused',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='running' RETURNING id,status",
+      [req.params.id, req.auth.id]
+    );
+    if (!updated.rowCount) {
+      const owned = await client.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [req.params.id, req.auth.id]);
+      await client.query("ROLLBACK");
+      return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task is not currently running." : "Task not found." });
+    }
+    await appendTaskEvent(client, req.params.id, "task.paused", { actor: "user" });
+    await client.query("COMMIT");
+    return res.json({ task: updated.rows[0] });
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(503).json({ error: "Could not pause task." });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/api/agent/tasks/:id/resume", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updated = await client.query(
+      "UPDATE agent_tasks SET status='running',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='paused' RETURNING id,status",
+      [req.params.id, req.auth.id]
+    );
+    if (!updated.rowCount) {
+      const owned = await client.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [req.params.id, req.auth.id]);
+      await client.query("ROLLBACK");
+      return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task is not paused." : "Task not found." });
+    }
+    await appendTaskEvent(client, req.params.id, "task.resumed", { actor: "user" });
+    await client.query("COMMIT");
+    setImmediate(() => runAgentTask(req.params.id, req.auth.id));
+    return res.status(202).json({ task: updated.rows[0] });
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(503).json({ error: "Could not resume task." });
+  } finally {
+    client.release();
+  }
+});
+
 app.post("/api/agent/tasks/:id/cancel", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const updated = await client.query(
-      "UPDATE agent_tasks SET status='cancelled',updated_at=now() WHERE id=$1 AND user_id=$2 AND status IN ('queued','planning','awaiting_approval','paused') RETURNING id,status",
+      "UPDATE agent_tasks SET status='cancelled',updated_at=now() WHERE id=$1 AND user_id=$2 AND status IN ('queued','planning','awaiting_approval','running','paused') RETURNING id,status",
       [req.params.id, req.auth.id]
     );
     if (!updated.rowCount) {
@@ -556,10 +861,7 @@ app.post("/api/agent/tasks/:id/cancel", noStore, sameOriginOnly, dbRequired, req
       await client.query("ROLLBACK");
       return res.status(owned.rowCount ? 409 : 404).json({ error: owned.rowCount ? "Task cannot be cancelled in its current state." : "Task not found." });
     }
-    await client.query(
-      "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,'task.cancelled',$2::jsonb)",
-      [req.params.id, JSON.stringify({ status: "cancelled", actor: "user" })]
-    );
+    await appendTaskEvent(client, req.params.id, "task.cancelled", { status: "cancelled", actor: "user" });
     await client.query("COMMIT");
     return res.json({ task: updated.rows[0] });
   } catch {
