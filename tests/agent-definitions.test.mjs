@@ -11,7 +11,7 @@ test("specialized agent definitions expose only supported tools", () => {
     assert.ok(profile.allowedTools.includes("response.compose"));
     assert.ok(profile.allowedTools.every(tool => [
       "memory.search", "memory.save", "math.calculate", "time.now",
-      "browser.open", "terminal.run", "response.compose"
+      "browser.open", "terminal.run", "agent.delegate", "response.compose"
     ].includes(tool)));
   }
 });
