@@ -509,7 +509,7 @@ async function runAgentTask(taskId, userId) {
       try {
         await client.query("BEGIN");
         const locked = await client.query(
-          "SELECT id,status,plan,current_step FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+          "SELECT id,status,plan,current_step,approved_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
           [taskId, userId]
         );
         if (!locked.rowCount || locked.rows[0].status !== "running") {
@@ -517,6 +517,15 @@ async function runAgentTask(taskId, userId) {
           return;
         }
         const task = locked.rows[0];
+        if (!task.approved_at) {
+          await client.query(
+            "UPDATE agent_tasks SET status='failed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3",
+            ["Execution blocked because no approval record exists.", taskId, userId]
+          );
+          await appendTaskEvent(client, taskId, "task.blocked", { reason: "Missing explicit approval timestamp." });
+          await client.query("COMMIT");
+          return;
+        }
         const plan = safeAgentPlan(task.plan);
         const stepIndex = Number(task.current_step || 0);
         if (stepIndex >= plan.steps.length) {
