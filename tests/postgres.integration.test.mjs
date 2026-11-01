@@ -261,7 +261,7 @@ if (!process.env.DATABASE_URL) {
         const originalStreamFetch = globalThis.fetch;
         globalThis.fetch = async (input, options = {}) => {
           if (String(input) === "https://api.openai.com/v1/chat/completions" && JSON.parse(options.body || "{}").stream === true) {
-            return new Response('data: {"choices":[{"delta":{"content":"Streamed "}}]}\\r\\n\\r\\ndata: {"choices":[{"delta":{"content":"answer"}}]}\\r\\n\\r\\ndata: [DONE]\\r\\n\\r\\n', { status: 200, headers: { "content-type": "text/event-stream" } });
+            return new Response('data: {"choices":[{"delta":{"content":"Streamed "}}]}\r\n\r\ndata: {"choices":[{"delta":{"content":"answer"}}]}\r\n\r\ndata: [DONE]\r\n\r\n', { status: 200, headers: { "content-type": "text/event-stream" } });
           }
           return originalStreamFetch(input, options);
         };
