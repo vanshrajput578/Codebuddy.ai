@@ -290,7 +290,10 @@ if (!process.env.DATABASE_URL) {
         }
         const completedAgent = await waitForAgentTask(agentTaskId, "completed");
         assert.equal(completedAgent.task.current_step, 3);
-        assert.equal(completedAgent.task.result, "Agent finished after approval.");
+        assert.ok(completedAgent.task.result.startsWith("Agent finished after approval."));
+        assert.match(completedAgent.task.result, /Verified execution results/);
+        assert.match(completedAgent.task.result, /memory.search/);
+        assert.match(completedAgent.task.result, /memory.save/);
         assert.equal(completedAgent.task.plan.steps[0].result.memories.length, 1, "tool outputs must persist in the execution plan");
         assert.ok(completedAgent.events.some(event => event.event_type === "task.approved"));
         assert.equal(completedAgent.events.filter(event => event.event_type === "tool.executed").length, 3);
