@@ -31,7 +31,10 @@ if (!process.env.DATABASE_URL) {
 
   test("PostgreSQL account, provider vault, CSRF and ownership flows", async () => {
     const schema = await readFile(new URL("../db/schema.sql", import.meta.url), "utf8");
+    const migration = await readFile(new URL("../db/migrations/003_agent_runtime.sql", import.meta.url), "utf8");
     await pool.query(schema);
+    await pool.query(migration);
+    await pool.query(migration);
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
