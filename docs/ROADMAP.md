@@ -45,7 +45,7 @@ Acceptance: configured provider returns a real streamed response. Current: crede
 - [x] Central allowlisted tool registry with memory search/save, safe arithmetic and timezone-aware clock tools, plus server-side input validation.
 - [x] Explicit plan approval/rejection, pause/resume/cancel transitions and restart recovery.
 - [x] Add user-scoped persistent memory CRUD API.
-Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, central tool registry, safe math/time tools, memory-write approval gate, task UI, lifecycle controls, restart-to-paused recovery and final result composition from persisted tool outputs are implemented. External tools and dynamic replanning are deferred; any future replan that introduces writes must obtain fresh user approval.
+Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, central tool registry, safe math/time tools, memory-write approval gate, task UI, lifecycle controls, restart-to-paused recovery, persisted-result composition and evidence-driven continuation planning are implemented. Continuations are capped at two rounds and eight total steps; newly proposed writes clear the prior approval and pause until the updated plan is approved.
 
 ## Phase 5 — Android
 - [ ] Expo app and shared API client.
@@ -84,7 +84,7 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 | 1 — Web foundation | Partial. Same-origin responsive HTML/CSS/JS UI and API are present; React/Next.js conversion and accessibility audit are not done. | Node syntax and static frontend/security tests pass. No browser/device visual QA was run. |
 | 2 — Backend and accounts | Core account/session/conversation APIs implemented. Email verification, password recovery, quotas and account deletion remain absent. | PostgreSQL CI integration covers registration/login, CSRF, provider ownership, conversation ownership, logout and persistence. |
 | 3 — AI providers and chat | Provider vault, selection and Gemini/OpenAI/OpenRouter/Anthropic adapters implemented. Model registry, streaming, usage reporting and provider retries remain incomplete. | CI uses a mocked OpenAI endpoint to verify key decryption, tenant-bound ciphertext, provider routing, chat persistence and bounded context. Real third-party API calls are not verified. |
-| 4 — Agent runtime and memory | Bounded provider-assisted planner, allowlisted memory/response tools, approval gate, background executor, task UI, pause/resume/cancel/reject and restart recovery. No external shell/browser tools or multi-step model replanning. | PostgreSQL CI exercises plan validation, no execution before approval, approved execution, memory writes, cross-user isolation, rejection, pause/resume and invalid-tool rejection. |
+| 4 — Agent runtime and memory | Bounded provider-assisted planner, allowlisted memory/response tools, approval gate, background executor, task UI, pause/resume/cancel/reject and restart recovery. No external shell/browser tools. Dynamic replanning is bounded to two continuation rounds and requires fresh approval for newly introduced write actions. | PostgreSQL CI exercises plan validation, no execution before approval, approved execution, memory writes, cross-user isolation, rejection, pause/resume and invalid-tool rejection. |
 | 5 — Android | Initial native Kotlin/Jetpack Compose client implemented on the Phase 5 branch: sign-in/register, encrypted session cookie storage, chat/history, provider settings, agent task creation/plan review/approval and task lifecycle controls. Push notifications, biometric auth, offline mode, Play signing and device QA remain. | Android Gradle CI built the debug APK successfully on commit 83d81b1 and uploaded an artifact. No device/emulator interaction test or signed release APK has been verified. |
 | 6 — Computer tools | Not implemented. | No isolated browser/terminal worker or sandbox tests exist. |
 | 7 — Multi-agent and automations | Not implemented. | No delegation, scheduler or notification tests exist. |
@@ -123,4 +123,4 @@ Latest backend-verified code commit: `fe56c99f82efb09420f5d7f2e00a1b87beb50245`.
 - [x] Increase the maximum validated plan length from five to eight steps with an additive database migration.
 - [x] Add unit tests for tool allowlisting, validation, approval metadata, arithmetic safety and time output.
 - [ ] Move execution into a separately supervised durable worker (next reliability increment).
-- [ ] Add dynamic replanning and final-answer synthesis from actual tool outputs.
+- [x] Add evidence-driven dynamic replanning with bounded continuation plans and renewed approval for newly proposed writes.
