@@ -169,14 +169,16 @@ function encryptionKey() {
   if (key.length !== 32) throw new Error("Credential encryption is not configured.");
   return key;
 }
-function encryptCredential(plaintext) {
+function encryptCredential(plaintext, context) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  cipher.setAAD(Buffer.from(context, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   return { iv: iv.toString("base64"), ciphertext: ciphertext.toString("base64"), authTag: cipher.getAuthTag().toString("base64") };
 }
-function decryptCredential(row) {
+function decryptCredential(row, context) {
   const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(row.iv, "base64"));
+  decipher.setAAD(Buffer.from(context, "utf8"));
   decipher.setAuthTag(Buffer.from(row.auth_tag, "base64"));
   return Buffer.concat([
     decipher.update(Buffer.from(row.ciphertext, "base64")), decipher.final()
@@ -196,7 +198,7 @@ async function getProviderCredential(userId, provider) {
     [userId, provider]
   );
   if (!result.rowCount) return null;
-  return { key: decryptCredential(result.rows[0]), model: result.rows[0].model_name };
+  return { key: decryptCredential(result.rows[0], `${userId}:${provider}`), model: result.rows[0].model_name };
 }
 async function callProvider(provider, key, modelName, prompt, history = []) {
   if (provider === "gemini") {
@@ -359,7 +361,7 @@ app.put("/api/providers/:provider", noStore, sameOriginOnly, dbRequired, require
   let encrypted;
   try {
     config = providerConfig(provider, requestedModel);
-    encrypted = encryptCredential(apiKey.trim());
+    encrypted = encryptCredential(apiKey.trim(), `${req.auth.id}:${provider}`);
   } catch {
     return res.status(400).json({ error: "Invalid provider settings or server encryption is not configured." });
   }
