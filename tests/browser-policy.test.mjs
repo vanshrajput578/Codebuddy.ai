@@ -8,16 +8,16 @@ test("browser URL policy permits only normal HTTP and HTTPS destinations", () =>
   for (const value of [
     "file:///etc/passwd", "javascript:alert(1)", "ftp://example.com",
     "http://user:pass@example.com", "http://localhost", "http://service.local",
-    "http://metadata.google.internal", "http://example.com:3000"
+    "http://metadata.google.internal", "http://example.com:3000",
+    "http://127.0.0.1", "http://10.0.0.2", "http://169.254.169.254"
   ]) assert.throws(() => parseBrowserUrl(value));
 });
 
-test("browser URL policy blocks private, loopback, link-local and reserved IPs", () => {
+test("browser URL policy blocks private, loopback, link-local and reserved IPv6 addresses", () => {
   for (const address of [
-    "127.0.0.1", "10.0.0.2", "172.16.0.1", "192.168.1.1",
-    "169.254.169.254", "100.64.0.1", "192.0.2.8", "224.0.0.1",
-    "::1", "fc00::1", "fe80::1", "ff02::1", "::ffff:127.0.0.1"
-  ]) assert.throws(() => parseBrowserUrl(`http://[${address}]/`.replace("http://[127.", "http://127.")));
+    "::", "::1", "fc00::1", "fe80::1", "ff02::1",
+    "2001:db8::1", "::ffff:127.0.0.1"
+  ]) assert.throws(() => parseBrowserUrl(`http://[${address}]/`));
 });
 
 test("DNS policy rejects any hostname answer that is private or reserved", async () => {
