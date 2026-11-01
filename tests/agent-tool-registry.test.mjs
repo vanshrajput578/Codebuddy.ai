@@ -7,7 +7,7 @@ import {
 
 test("registry exposes only explicitly registered tools", () => {
   assert.deepEqual(getAgentToolNames(), [
-    "memory.search", "memory.save", "math.calculate", "time.now", "response.compose"
+    "memory.search", "memory.save", "math.calculate", "time.now", "browser.open", "response.compose"
   ]);
   assert.match(getAgentToolPrompt(), /math.calculate/);
   assert.throws(() => isAgentToolApprovalRequired("shell.exec"), /Unsupported/);
@@ -18,11 +18,14 @@ test("memory writes require approval while read-only tools do not", () => {
   assert.equal(isAgentToolApprovalRequired("memory.search"), false);
   assert.equal(isAgentToolApprovalRequired("math.calculate"), false);
   assert.equal(isAgentToolApprovalRequired("time.now"), false);
+  assert.equal(isAgentToolApprovalRequired("browser.open"), true);
 });
 
 test("tool inputs are normalized and bounded", () => {
   assert.deepEqual(validateAgentToolInput("math.calculate", { expression: " 2 + 3 " }), { expression: "2 + 3" });
   assert.deepEqual(validateAgentToolInput("time.now", {}), { timezone: "Asia/Kolkata" });
+  assert.deepEqual(validateAgentToolInput("browser.open", { url: "https://example.com/path" }), { url: "https://example.com/path" });
+  assert.throws(() => validateAgentToolInput("browser.open", { url: "http://127.0.0.1:4000/" }), /Private/);
   assert.throws(() => validateAgentToolInput("memory.search", { query: "" }), /Invalid/);
   assert.throws(() => validateAgentToolInput("memory.save", { category: "admin", content: "x" }), /category/);
   assert.throws(() => validateAgentToolInput("time.now", { timezone: "Not/AZone" }), /timezone/);
@@ -85,4 +88,48 @@ test("final answer includes bounded results from completed tools", () => {
 test("final answer safely handles absent or malformed tool output", () => {
   assert.equal(composeAgentResult([]), "The approved task completed.");
   assert.ok(composeAgentResult([{ tool: "math.calculate", status: "completed", result: null }]).includes("math.calculate"));
+});
+
+
+test("browser tool calls only the authenticated internal worker and returns bounded page data", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.BROWSER_WORKER_TOKEN;
+  const originalUrl = process.env.BROWSER_WORKER_URL;
+  const captured = {};
+  process.env.BROWSER_WORKER_TOKEN = "browser-worker-secret-token-that-is-long-enough";
+  process.env.BROWSER_WORKER_URL = "http://nexus-browser-worker:4002";
+  globalThis.fetch = async (url, options) => {
+    captured.url = String(url);
+    captured.options = options;
+    return new Response(JSON.stringify({
+      result: { url: "https://example.com/", title: "Example", status: 200, text: "Visible public content" }
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const result = await executeAgentTool(null, "owner-id", "browser.open", { url: "https://example.com/" });
+    assert.deepEqual(result, {
+      url: "https://example.com/", title: "Example", status: 200, text: "Visible public content"
+    });
+    assert.equal(captured.url, "http://nexus-browser-worker:4002/execute");
+    assert.equal(captured.options.method, "POST");
+    assert.equal(captured.options.headers.authorization, `Bearer ${process.env.BROWSER_WORKER_TOKEN}`);
+    assert.deepEqual(JSON.parse(captured.options.body), { userId: "owner-id", url: "https://example.com/" });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.BROWSER_WORKER_TOKEN;
+    else process.env.BROWSER_WORKER_TOKEN = originalToken;
+    if (originalUrl === undefined) delete process.env.BROWSER_WORKER_URL;
+    else process.env.BROWSER_WORKER_URL = originalUrl;
+  }
+});
+
+test("browser tool fails closed when the isolated worker is not configured", async () => {
+  const originalToken = process.env.BROWSER_WORKER_TOKEN;
+  delete process.env.BROWSER_WORKER_TOKEN;
+  try {
+    await assert.rejects(executeAgentTool(null, "owner-id", "browser.open", { url: "https://example.com" }), /not configured/);
+  } finally {
+    if (originalToken === undefined) delete process.env.BROWSER_WORKER_TOKEN;
+    else process.env.BROWSER_WORKER_TOKEN = originalToken;
+  }
 });
