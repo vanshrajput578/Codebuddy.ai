@@ -80,9 +80,11 @@ No open-source license has been selected. Normal copyright applies.
 - Chat uses authenticated same-origin Server-Sent Events at `POST /api/chat/stream`; the web client renders deltas as they arrive.
 - Gemini, OpenAI, OpenRouter and Anthropic have provider-specific SSE adapters. Transient HTTP 408/429/5xx responses receive one bounded retry before any output is streamed; requests have a 60-second timeout and support client cancellation.
 - `GET /api/providers/usage` returns the authenticated user's last-30-day request counts, success/error counts, input/output character counts and average latency. Character counts are estimates, not billable token counts; provider-specific token accounting is not claimed.
-- Model capability metadata is exposed with `GET /api/providers` under `supported`. Model availability and limits can change at provider discretion; live third-party credentials are not part of CI.
+- Model capability metadata is exposed with `GET /api/providers` under `supported`. Model availability and limits can change at provider discretion. CI uses mocked provider responses by default; if all four GitHub Actions secrets (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`) are configured, the backend workflow also runs `npm run test:providers:live`. Optional model overrides can be set as repository Actions variables (`GEMINI_MODEL`, `OPENAI_MODEL`, `OPENROUTER_MODEL`, `ANTHROPIC_MODEL`).
 
 
 ## Phase 3 verification status
 
 The Phase 3 implementation is in draft PR [#4](https://github.com/vanshrajput578/Codebuddy.ai/pull/4). The latest backend checks (including PostgreSQL integration and provider adapter tests) and secret scan pass on commit `3da4582`. CI uses mocked provider responses. Real streaming with valid credentials for Gemini, OpenAI, OpenRouter and Anthropic remains an explicit acceptance requirement and has not been claimed as verified.
+
+For local live verification, set the same four API-key environment variables in a trusted shell and run `npm run test:providers:live`. Never commit provider keys or paste them into chat.
