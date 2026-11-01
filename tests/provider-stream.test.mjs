@@ -89,15 +89,18 @@ test("stream adapter applies the registry default model when no model is configu
 });
 
 
-test("stream adapter exposes HTTP status for live provider diagnostics", async () => {
+test("stream adapter exposes sanitized provider diagnostics without leaking credentials", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response("provider error body must not be echoed", { status: 401 });
+  const echoedCredential = "sk-testsecret123456789012";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { message: `Rejected key ${echoedCredential} because the model is unavailable.`, type: "invalid_request_error" }
+  }), { status: 400, headers: { "content-type": "application/json" } });
   try {
     await assert.rejects(async () => {
       for await (const _chunk of streamProviderResponse("openai", "provider-test-key-123", "model-test", "hello")) {}
     }, error => {
-      assert.match(error.message, /HTTP 401/);
-      assert.doesNotMatch(error.message, /provider error body/);
+      assert.match(error.message, /HTTP 400: Rejected key \\[redacted\\]/);
+      assert.doesNotMatch(error.message, new RegExp(echoedCredential));
       return true;
     });
   } finally { globalThis.fetch = originalFetch; }
