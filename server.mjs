@@ -204,7 +204,7 @@ async function callProvider(provider, key, modelName, prompt, history = []) {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ contents })
+      body: JSON.stringify({ contents }), signal: AbortSignal.timeout(45_000)
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error("Provider request failed.");
@@ -223,7 +223,7 @@ async function callProvider(provider, key, modelName, prompt, history = []) {
       headers["HTTP-Referer"] = appOrigin || "http://localhost";
       headers["X-Title"] = "NEXUS AI";
     }
-    const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ model: modelName, messages }) });
+    const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ model: modelName, messages }), signal: AbortSignal.timeout(45_000) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error("Provider request failed.");
     return data.choices?.[0]?.message?.content?.trim() || "";
@@ -236,7 +236,7 @@ async function callProvider(provider, key, modelName, prompt, history = []) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: modelName, max_tokens: 4096, messages })
+      body: JSON.stringify({ model: modelName, max_tokens: 4096, messages }), signal: AbortSignal.timeout(45_000)
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error("Provider request failed.");
