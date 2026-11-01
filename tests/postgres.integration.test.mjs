@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
 if (!process.env.DATABASE_URL) {
   test("PostgreSQL integration suite requires DATABASE_URL", { skip: true }, () => {});
@@ -388,6 +389,52 @@ if (!process.env.DATABASE_URL) {
         assert.equal(recoveredBody.task.worker_attempts, 2);
         assert.ok(recoveredBody.events.some(event => event.event_type === "tool.executed"), "reclaimed work must continue from the persisted cursor");
         await releaseAgentTaskLease(pool, recoveryId, replacementToken);
+
+        const heartbeatTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Heartbeat renewal','Long-running heartbeat test','running',now(),'{"steps":[]}'::jsonb,0) RETURNING id", [first.user.id]);
+        let heartbeatExpiryBefore = 0;
+        let heartbeatExpiryAfter = 0;
+        const heartbeatWorker = startAgentWorker({
+          pool, workerId: "heartbeat-integration-worker", pollIntervalMs: 10, leaseMs: 5_000,
+          executeTask: async id => {
+            const before = await pool.query("SELECT lease_expires_at FROM agent_tasks WHERE id=$1", [id]);
+            heartbeatExpiryBefore = new Date(before.rows[0].lease_expires_at).getTime();
+            await new Promise(resolve => setTimeout(resolve, 6_500));
+            const after = await pool.query("SELECT lease_expires_at FROM agent_tasks WHERE id=$1", [id]);
+            heartbeatExpiryAfter = new Date(after.rows[0].lease_expires_at).getTime();
+          }
+        });
+        for (let attempt = 0; attempt < 100 && !heartbeatExpiryAfter; attempt += 1) await new Promise(resolve => setTimeout(resolve, 100));
+        const heartbeatHealth = heartbeatWorker.health();
+        await heartbeatWorker.stop();
+        assert.ok(heartbeatExpiryBefore && heartbeatExpiryAfter > heartbeatExpiryBefore, "heartbeat must extend the lease during long-running work");
+        assert.ok(heartbeatHealth.heartbeatSuccesses >= 2, "worker should record repeated successful heartbeats");
+        assert.equal(heartbeatHealth.activeTaskId, null, "worker health must clear the active task after completion");
+
+        const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),'{"steps":[]}'::jsonb,0) RETURNING id", [first.user.id]);
+        const childSource = [
+          'import { startAgentWorker } from "./agent/worker-queue.mjs";',
+          'import pg from "pg";',
+          'const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });',
+          'startAgentWorker({ pool, workerId: "hard-kill-worker", pollIntervalMs: 10, leaseMs: 5000, executeTask: async () => new Promise(() => {}) });'
+        ].join("\n");
+        const child = spawn(process.execPath, ["--input-type=module", "-e", childSource], { cwd: process.cwd(), env: process.env, stdio: "ignore" });
+        let childClaimed = false;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const lease = await pool.query("SELECT lease_owner FROM agent_tasks WHERE id=$1", [crashTask.rows[0].id]);
+          if (lease.rows[0]?.lease_owner === "hard-kill-worker") { childClaimed = true; break; }
+          if (child.exitCode !== null) break;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        assert.equal(childClaimed, true, "subprocess worker must claim the test task");
+        child.kill("SIGKILL");
+        await new Promise(resolve => child.once("exit", resolve));
+        await new Promise(resolve => setTimeout(resolve, 5_200));
+        const reclaimedAfterKill = await claimNextAgentTask(pool, "post-crash-recovery-worker", 5_000);
+        assert.equal(reclaimedAfterKill?.id, crashTask.rows[0].id, "another worker must reclaim the task after a hard process kill");
+        assert.equal(reclaimedAfterKill.worker_attempts, 2);
+        await releaseAgentTaskLease(pool, crashTask.rows[0].id, reclaimedAfterKill.lease_token);
+        await pool.query("UPDATE agent_tasks SET status='cancelled' WHERE id=$1", [crashTask.rows[0].id]);
+        await pool.query("UPDATE agent_tasks SET status='completed' WHERE id=$1", [heartbeatTask.rows[0].id]);
 
         const rejectedCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
