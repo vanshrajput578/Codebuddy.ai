@@ -88,4 +88,12 @@ The Phase 4 agent runner accepts provider-generated JSON plans with at most five
 - `memory.save`: writes only to the authenticated user's memory and is marked approval-required.
 - `response.compose`: returns bounded text and has no external side effects.
 
-All plans remain in `awaiting_approval` until the user approves. The runner persists each step result and event in PostgreSQL, checks task status between steps, and supports pause, resume, reject and cancel. On server restart, any task left in `running` is changed to `paused` and requires explicit resume. The only external computer capability currently exposed is approval-gated, read-only `browser.open`; shell execution, arbitrary HTTP, filesystem access and device control remain unavailable.
+All plans remain in `awaiting_approval` until the user approves. The runner persists each step result and event in PostgreSQL, checks task status between steps, and supports pause, resume, reject and cancel. On server restart, any task left in `running` is changed to `paused` and requires explicit resume. The only external computer capabilities currently exposed are approval-gated `browser.open` (read-only public page extraction) and `terminal.run` (commands in a disposable no-network container with an explicit bounded scratch-file transfer). Host filesystem access, arbitrary HTTP and device control remain unavailable.
+
+## Phase 6 terminal sandbox
+
+The terminal controller is a separate private service on a dedicated sandbox host/VM. It starts a fresh container for each approved `terminal.run` invocation; workspace files are explicitly supplied to that job and bounded files are returned, so this is scratch storage rather than a persistent shared filesystem.
+
+The fixed container configuration uses `--network none`, read-only root filesystem, UID/GID 10001, dropped capabilities, no-new-privileges, default seccomp, 256 MiB memory, 0.5 CPU, 64 PIDs, 64 MiB workspace tmpfs, 16 MiB temporary tmpfs and a 15-second command timeout. The controller accepts only a strict command/files schema, applies 10 jobs/minute per user and two concurrent jobs globally, and forcibly removes a named container on controller timeout. It never mounts host paths or passes application/database/provider secrets into the sandbox.
+
+The Docker CLI/daemon used by the controller has host-administrator privilege. Run it on a dedicated sandbox VM or isolated daemon; do not expose that daemon to the API/database host or mount its socket into task containers. The planner derives `terminal.run` approval from the server-side registry and requires evidence-driven continuation. Network and host isolation still require deployment verification.
