@@ -568,11 +568,12 @@ async function replanAgentTask(taskId, userId, leaseToken) {
   }
 }
 
-async function runAgentTask(taskId, userId, leaseToken) {
+async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => false) {
   if (activeAgentTasks.has(taskId)) return;
   activeAgentTasks.add(taskId);
   try {
     for (let iteration = 0; iteration <= maxAgentSteps; iteration += 1) {
+      if (isLeaseLost()) return;
       const client = await pool.connect();
       let clientReleased = false;
       try {
@@ -586,6 +587,10 @@ async function runAgentTask(taskId, userId, leaseToken) {
           return;
         }
         const task = locked.rows[0];
+        if (isLeaseLost()) {
+          await client.query("COMMIT");
+          return;
+        }
         if (!task.approved_at) {
           await client.query(
             "UPDATE agent_tasks SET status='failed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3",
@@ -624,6 +629,7 @@ async function runAgentTask(taskId, userId, leaseToken) {
         if (step.replanAfter) {
           client.release();
           clientReleased = true;
+          if (isLeaseLost()) return;
           const replanned = await replanAgentTask(taskId, userId, leaseToken);
           if (replanned.status !== "running") return;
         }
