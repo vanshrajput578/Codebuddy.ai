@@ -454,6 +454,7 @@ agentTaskForm.addEventListener('submit',async event=>{
   finally{button.disabled=false;loadAgentTasks();}
 });
 document.getElementById('refreshAgentTasks').addEventListener('click',loadAgentTasks);
+document.getElementById('refreshFiles').addEventListener('click',loadFiles);
 
 async function sendMessage(text){
   const value=String(text||'').trim();
