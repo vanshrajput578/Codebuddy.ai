@@ -37,3 +37,21 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS messages_conversation_created_idx ON messages(conversation_id, created_at);
+
+CREATE TABLE IF NOT EXISTS provider_credentials (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider VARCHAR(30) NOT NULL CHECK (provider IN ('gemini','openai','openrouter','anthropic')),
+  model_name VARCHAR(120) NOT NULL,
+  ciphertext TEXT NOT NULL,
+  iv VARCHAR(32) NOT NULL,
+  auth_tag VARCHAR(32) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, provider)
+);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  provider VARCHAR(30) NOT NULL CHECK (provider IN ('gemini','openai','openrouter','anthropic')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
