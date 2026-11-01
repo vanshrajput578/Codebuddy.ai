@@ -148,7 +148,7 @@ test("browser worker rejects oversized and unexpected job payloads", async () =>
   await withServer(async base => {
     const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
     const oversized = await fetch(`${base}/execute`, {
-      method: "POST", headers: { ...headers, "content-length": String(20_000) }, body: "{}"
+      method: "POST", headers, body: JSON.stringify({ userId, url: "https://" + "a".repeat(17_000) + ".com" })
     });
     assert.equal(oversized.status, 400);
     const extraField = await fetch(`${base}/execute`, {
