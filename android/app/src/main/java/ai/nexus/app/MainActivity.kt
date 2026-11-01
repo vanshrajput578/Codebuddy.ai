@@ -1,6 +1,12 @@
 package ai.nexus.app
 
 import android.os.Bundle
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -15,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -23,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.Locale
 
 private val Ink = Color(0xFF09090D)
 private val Panel = Color(0xFF15151D)
@@ -158,8 +166,28 @@ private fun AuthScreen(loading: Boolean, error: String, onLogin: (String, String
 
 @Composable
 private fun ChatScreen(api: NexusApi, loading: Boolean, runRequest: (suspend () -> Unit) -> Unit) {
+    val context = LocalContext.current
     var messages by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     var draft by remember { mutableStateOf("") }
+    var voiceMessage by remember { mutableStateOf("") }
+    val speechAvailable = remember(context) { android.speech.SpeechRecognizer.isRecognitionAvailable(context) }
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+                .orEmpty()
+                .trim()
+            if (spokenText.isNotBlank()) {
+                draft = listOf(draft.trim(), spokenText).filter { it.isNotBlank() }.joinToString(" ")
+                voiceMessage = "Voice text added. Review it before sending."
+            } else {
+                voiceMessage = "No speech was recognized. Try again."
+            }
+        } else if (result.resultCode != Activity.RESULT_CANCELED) {
+            voiceMessage = "Speech recognition did not complete."
+        }
+    }
     var conversationId by remember { mutableStateOf<String?>(null) }
     var historyOpen by remember { mutableStateOf(false) }
     var conversations by remember { mutableStateOf(listOf<JSONObject>()) }
@@ -210,11 +238,36 @@ private fun ChatScreen(api: NexusApi, loading: Boolean, runRequest: (suspend () 
             }
             if (messages.isEmpty()) item { Text("Ask NEXUS anything. Your selected provider runs securely on the server.", color = Muted, modifier = Modifier.padding(vertical = 28.dp)) }
         }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f), placeholder = { Text("Message NEXUS…") }, maxLines = 4)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Message NEXUS…") },
+                maxLines = 4
+            )
+            OutlinedButton(
+                enabled = speechAvailable && !loading,
+                onClick = {
+                    voiceMessage = ""
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your message to NEXUS")
+                    }
+                    try {
+                        speechLauncher.launch(intent)
+                    } catch (_: ActivityNotFoundException) {
+                        voiceMessage = "No compatible speech recognition app is installed."
+                    } catch (_: SecurityException) {
+                        voiceMessage = "Speech recognition permission was denied by the device service."
+                    }
+                }
+            ) { Text("Voice") }
             Button(enabled = draft.isNotBlank() && !loading, onClick = {
                 val text = draft.trim()
-                messages = messages + ("You" to text); draft = ""
+                messages = messages + ("You" to text); draft = ""; voiceMessage = ""
                 runRequest {
                     val result = withContext(Dispatchers.IO) { api.chat(text, conversationId) }
                     conversationId = result.optString("conversationId").takeIf { it.isNotBlank() }
@@ -222,6 +275,14 @@ private fun ChatScreen(api: NexusApi, loading: Boolean, runRequest: (suspend () 
                 }
             }) { Text("Send") }
         }
+        if (voiceMessage.isNotBlank()) {
+            Text(voiceMessage, color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            "Voice uses your device speech-recognition service. NEXUS receives recognized text, not the audio recording.",
+            color = Muted,
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
