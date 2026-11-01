@@ -20,6 +20,7 @@ const suggestions=document.getElementById('suggestions');
 const chatArea=document.getElementById('chatArea');
 const providerSettings=document.getElementById('providerSettings');
 const tasksView=document.getElementById('tasksView');
+const filesView=document.getElementById('filesView');
 const agentTaskForm=document.getElementById('agentTaskForm');
 const agentTaskError=document.getElementById('agentTaskError');
 const agentTaskList=document.getElementById('agentTaskList');
@@ -285,6 +286,51 @@ async function downloadWorkspaceFile(taskId,file){
   anchor.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
+
+async function loadFiles(){
+  if(!currentUser||!filesView)return;
+  const list=document.getElementById('filesList');
+  const count=document.getElementById('filesCount');
+  list.replaceChildren();
+  count.textContent='Loading...';
+  try{
+    const data=await providerRequest('/api/files');
+    const files=Array.isArray(data.files)?data.files:[];
+    count.textContent=files.length+' file(s)';
+    if(!files.length){
+      const empty=document.createElement('div');empty.className='agent-empty';
+      const icon=document.createElement('span');icon.textContent='▤';
+      const title=document.createElement('b');title.textContent='Your workspace is empty';
+      const help=document.createElement('small');help.textContent='Attach files when creating an Agent Task. Terminal outputs will appear here too.';
+      const open=makeAgentButton('Open Agent Tasks',()=>showView('tasks'),'auth-submit');
+      empty.append(icon,title,help,open);list.append(empty);return;
+    }
+    for(const file of files){
+      const row=document.createElement('article');row.className='files-library-row';
+      const details=document.createElement('div');details.className='files-library-details';
+      const name=document.createElement('b');name.textContent=file.path;
+      const meta=document.createElement('small');meta.textContent=(file.taskTitle||'Agent task')+' · '+formatFileSize(Number(file.sizeBytes)||0);
+      details.append(name,meta);
+      const actions=document.createElement('div');actions.className='files-library-actions';
+      actions.append(
+        makeAgentButton('Download',()=>downloadWorkspaceFile(file.taskId,file)),
+        makeAgentButton('Open task',async()=>{showView('tasks');await openAgentTask(file.taskId);})
+      );
+      const remove=makeAgentButton('Remove',async()=>{
+        if(!window.confirm('Remove '+file.path+' from this task workspace?'))return;
+        try{
+          await providerRequest('/api/agent/tasks/'+file.taskId+'/files/'+file.id,{method:'DELETE'});
+          await loadFiles();
+          if(selectedAgentTaskId===file.taskId)await openAgentTask(file.taskId);
+        }catch(error){count.textContent=error.message;}
+      },'provider-danger');
+      actions.append(remove);row.append(details,actions);list.append(row);
+    }
+  }catch(error){
+    count.textContent='Could not load files';
+    const message=document.createElement('p');message.className='auth-error';message.textContent=error.message;list.append(message);
+  }
+}
 function makeAgentButton(label,action,className='provider-secondary'){
   const button=document.createElement('button');
   button.type='button';button.className=className;button.textContent=label;
@@ -468,9 +514,10 @@ function showView(view){
   document.querySelectorAll('.nav-item').forEach(item=>item.classList.toggle('active',item.dataset.view===view));
   pageName.textContent=labels[view]||labels.chat;
   chatView.classList.toggle('hidden',view!=='chat');
-  infoView.classList.toggle('hidden',view==='chat'||view==='settings'||view==='tasks');
+  infoView.classList.toggle('hidden',view==='chat'||view==='settings'||view==='tasks'||view==='files');
   providerSettings.classList.toggle('hidden',view!=='settings'||!currentUser);
   tasksView.classList.toggle('hidden',view!=='tasks'||!currentUser);
+  filesView.classList.toggle('hidden',view!=='files'||!currentUser);
   if(view==='tasks'&&!currentUser){
     infoView.classList.remove('hidden');
     document.getElementById('infoTitle').textContent='Sign in required';
@@ -482,8 +529,14 @@ function showView(view){
     document.getElementById('infoTitle').textContent='Sign in required';
     document.getElementById('infoText').textContent='Sign in to manage your private AI provider credentials.';
   }
+  if(view==='files'&&!currentUser){
+    infoView.classList.remove('hidden');
+    document.getElementById('infoTitle').textContent='Sign in required';
+    document.getElementById('infoText').textContent='Sign in to view your private task workspace files.';
+  }
   if(view==='settings'&&currentUser)loadProviderSettings();
-  if(view!=='chat'&&view!=='settings'&&view!=='tasks'){
+  if(view==='files'&&currentUser)loadFiles();
+  if(view!=='chat'&&view!=='settings'&&view!=='tasks'&&view!=='files'){
     document.getElementById('infoTitle').textContent=labels[view];
     document.getElementById('infoText').textContent=descriptions[view]||'This module is planned.';
   }
