@@ -10,7 +10,7 @@ import {
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
-import { executeAgentTool as runRegisteredAgentTool, getAgentToolPrompt, getAgentToolNames, isAgentToolApprovalRequired, validateAgentToolInput } from "./agent/tool-registry.mjs";
+import { executeAgentTool as runRegisteredAgentTool, getAgentToolPrompt, getAgentToolNames, isAgentToolApprovalRequired, validateAgentToolInput, composeAgentResult } from "./agent/tool-registry.mjs";
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
