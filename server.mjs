@@ -649,7 +649,7 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
       try {
         await client.query("BEGIN");
         const locked = await client.query(
-          "SELECT id,status,plan,current_step,approved_at,replan_count,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+          "SELECT id,status,plan,current_step,approved_at,replan_count,agent_profile,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
           [taskId, userId]
         );
         if (!locked.rowCount || locked.rows[0].status !== "running" || locked.rows[0].lease_token !== leaseToken || new Date(locked.rows[0].lease_expires_at).getTime() <= Date.now()) {
@@ -670,7 +670,7 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
           await client.query("COMMIT");
           return;
         }
-        const plan = safeAgentPlan(task.plan);
+        const plan = safeAgentPlan(task.plan, task.agent_profile);
         const stepIndex = Number(task.current_step || 0);
         if (stepIndex >= plan.steps.length) {
           const resultText = composeAgentResult(plan.steps);
@@ -703,7 +703,7 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
           try {
             await persist.query("BEGIN");
             const current = await persist.query(
-              "SELECT status,plan,current_step,approved_at,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+              "SELECT status,plan,current_step,approved_at,agent_profile,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
               [taskId, userId]
             );
             if (!current.rowCount || current.rows[0].status !== "running" ||
@@ -713,7 +713,7 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
               await persist.query("COMMIT");
               return;
             }
-            const currentPlan = safeAgentPlan(current.rows[0].plan);
+            const currentPlan = safeAgentPlan(current.rows[0].plan, current.rows[0].agent_profile);
             const persistedStep = currentPlan.steps[stepIndex];
             if (!persistedStep || persistedStep.id !== step.id || persistedStep.tool !== step.tool) {
               await persist.query("ROLLBACK");
