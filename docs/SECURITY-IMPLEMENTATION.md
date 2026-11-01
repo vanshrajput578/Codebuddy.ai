@@ -1,7 +1,7 @@
 # Security implementation notes
 
 ## Implemented in the repository
-- Server-side Gemini API integration.
+- Server-side provider adapters for Gemini, OpenAI, OpenRouter and Anthropic.
 - PostgreSQL schema for users, sessions, conversations and messages.
 - Email/password registration and login; passwords are hashed using scrypt.
 - Random opaque session cookies; only a hash of the token is stored in PostgreSQL.
@@ -14,7 +14,7 @@
 ## Local setup
 1. Install Node.js 20+ and PostgreSQL 14+.
 2. Create a database and database user.
-3. Copy `.env.example` to `.env`; set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `GEMINI_API_KEY`.
+3. Copy `.env.example` to `.env`; set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY` (generate with `openssl rand -base64 32`). Provider API keys are entered in Settings.
 4. Apply schema: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`.
 5. Run `npm install`, then `npm test`, then `npm run dev`.
 6. Open `http://localhost:4000`.
