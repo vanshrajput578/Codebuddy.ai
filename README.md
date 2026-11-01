@@ -4,10 +4,10 @@
 
 NEXUS AI is an AI workspace foundation with a same-origin web client, a Node.js API, PostgreSQL-backed accounts and a server-side Gemini integration.
 
-> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Per-user conversation persistence and bounded chat context are implemented. The encrypted per-user provider vault and Gemini/OpenAI/OpenRouter/Anthropic adapters are implemented in code. Autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
+> **Current status:** Account registration/login, server-side sessions, CSRF validation and authenticated Gemini chat are implemented in the codebase. Per-user conversation persistence and bounded chat context are implemented. The encrypted per-user provider vault and Gemini/OpenAI/OpenRouter/Anthropic adapters are implemented in code, but live provider requests have not been integration-tested. Autonomous tools, Android client and production deployment are not implemented. This project has not yet passed a live deployment/security review.
 
 ## Local setup
-Requirements: Node.js 20+, PostgreSQL 14+ and a Gemini API key.
+Requirements: Node.js 20+ and PostgreSQL 14+. Provider API keys are added in the signed-in Settings screen.
 
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
@@ -21,7 +21,7 @@ Requirements: Node.js 20+, PostgreSQL 14+ and a Gemini API key.
 The Express server serves the frontend and API on the same origin. Do not host the frontend separately unless you deliberately configure a secure same-origin reverse proxy.
 
 ## Security model
-- Provider credentials are read only by the server from environment variables.
+- Provider credentials are encrypted at rest with AES-256-GCM using `CREDENTIAL_ENCRYPTION_KEY`; the master key is server-only.
 - Passwords are hashed with Node.js scrypt; plaintext passwords are never stored.
 - Session tokens are random, stored as SHA-256 hashes in PostgreSQL and sent only in HttpOnly, SameSite=Strict cookies.
 - Production cookies use the Secure flag and the `__Host-` prefix.
@@ -31,7 +31,7 @@ The Express server serves the frontend and API on the same origin. Do not host t
 - Gitleaks scans repository history in GitHub Actions.
 
 ## Production deployment notes
-Set `NODE_ENV=production`, a strong private database credential, `APP_ORIGIN` to the exact HTTPS origin, `DATABASE_SSL=true` when required by your database host, and `GEMINI_API_KEY` using the host's secret manager. Set `TRUST_PROXY=true` only when exactly one trusted reverse proxy sits in front of the app. Never commit a real `.env` file.
+Set `NODE_ENV=production`, a strong private database credential, `APP_ORIGIN` to the exact HTTPS origin, `DATABASE_SSL=true` when required by your database host, and `CREDENTIAL_ENCRYPTION_KEY` using the host's secret manager. Set `TRUST_PROXY=true` only when exactly one trusted reverse proxy sits in front of the app. Never commit a real `.env` file.
 
 This is not yet production-ready for public multi-user traffic. Add per-user AI quotas, conversation persistence, account recovery/email verification, credential vault/KMS, dependency scanning, operational monitoring, backups and a third-party security review before launch.
 
