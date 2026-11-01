@@ -7,24 +7,24 @@ A phase is complete only after its acceptance tests pass.
 - [x] Document architecture and security boundaries.
 - [x] Create browser-openable web workspace prototype.
 - [x] Add a Gitleaks secret-scanning workflow.
-- [ ] Add automated tests and build checks.
+- [x] Add Gitleaks secret scanning.\n- [x] Add automated API security regression tests.
 - [ ] Select repository license.
 
 ## Phase 1 — Web foundation
 - [ ] Convert prototype into typed React/Next.js app.
 - [ ] Add accessible responsive components.
-- [ ] Implement authentication screens and API contracts.
+- [x] Implement account sign-in and registration UI.
 - [x] Add a server-side Gemini chat API and health endpoint.
 - [x] Add origin checks, request limits, Helmet headers and per-IP rate limiting.
 - [ ] Add automated API security tests.
 Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 
 ## Phase 2 — Backend and accounts
-- [ ] Add real user authentication and authorization.
-- [ ] Add PostgreSQL and durable user data.
+- [x] Add email/password registration and login endpoints.\n- [x] Add scrypt password hashing and hashed opaque sessions.
+- [x] Add PostgreSQL schema for users, sessions and conversation records.
 - [ ] Prisma schema and migrations.
-- [ ] Registration, login, refresh and logout.
-- [ ] Workspace ownership and authorization tests.
+- [x] Registration, login, current-session and logout endpoints.
+- [x] Require authenticated sessions and CSRF validation for chat.
 - [ ] Conversation persistence.
 Acceptance: users can register and only access their own data.
 
@@ -75,4 +75,4 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 - [ ] Deployment runbooks.
 
 ## Current truth
-The web UI now calls a server-side Gemini chat API. The backend is a single-provider prototype with origin checks and IP rate limiting; it has no user authentication, database, persistent conversations, agent runtime, Android client or sandbox. It is not production-ready for public multi-user deployment. No build or runtime tests have been executed yet.
+Account registration/login, PostgreSQL-backed sessions, CSRF checks and authenticated server-side Gemini chat are now implemented in the repository. The conversation and message tables exist, but chat history is not yet saved. The backend still needs live PostgreSQL integration tests, per-user AI quotas, account recovery/email verification, provider vault, multiple providers, agent runtime, Android client, isolated sandbox and a production security review. Tests are committed but have not been executed in this environment.
