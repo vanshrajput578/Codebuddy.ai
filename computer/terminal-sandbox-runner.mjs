@@ -71,7 +71,15 @@ async function materializeFiles(files) {
     if (total > MAX_TOTAL_FILE_BYTES) throw new Error("Total workspace input is limited to 1 MiB.");
     await ensureSafeDirectories(relative);
     const target = path.join(WORKSPACE, relative);
-    const handle = await open(target, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    let flags = constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW;
+    try {
+      const info = await lstat(target);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error("Workspace file path is not a regular file.");
+      flags = constants.O_TRUNC | constants.O_WRONLY | constants.O_NOFOLLOW;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    const handle = await open(target, flags, 0o600);
     try { await handle.writeFile(bytes); } finally { await handle.close(); }
   }
 }
