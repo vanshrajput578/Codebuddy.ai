@@ -9,7 +9,7 @@
 - HttpOnly and SameSite=Strict cookies; Secure and `__Host-` prefix in production.
 - CSRF token validation and exact-origin checks for state-changing routes.
 - Helmet/CSP, request limits and IP rate limits.
-- Per-user provider credential encryption using AES-256-GCM.
+- Per-user provider credential encryption using AES-256-GCM, with user/provider binding through authenticated additional data.
 - Server-side adapters for Gemini, OpenAI, OpenRouter and Anthropic.
 - Provider metadata APIs do not return original credentials.
 - Provider calls have a 45-second timeout.
