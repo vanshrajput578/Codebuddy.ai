@@ -42,5 +42,3 @@ jobs:
         run: npm run check
       - name: Run tests
         run: npm test
-      - name: Run tests
-        run: npm test
