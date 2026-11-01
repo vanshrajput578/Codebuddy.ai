@@ -687,7 +687,7 @@ app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requi
       "NEXUS_AGENT_PLAN_JSON",
       "Create a safe, short execution plan for the user's request.",
       "Return ONLY JSON with this shape: {\"steps\":[{\"title\":string,\"description\":string,\"tool\":string,\"input\":object}]}",
-      "Available tools:\\n" + getAgentToolPrompt(),
+      "Available tools:\n" + getAgentToolPrompt(),
       "Never propose shell, browser, arbitrary network access, code execution, purchases, messages, calls, account changes, or tools not listed above.",
       `Use 1 to ${maxAgentSteps} steps. Use tools only when relevant. Any tool marked as requiring approval must not run before explicit user approval. Always include one response.compose step as the final step.`,
       "User task: " + started.rows[0].prompt
