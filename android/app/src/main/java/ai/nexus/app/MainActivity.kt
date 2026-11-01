@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -111,9 +113,7 @@ private fun NexusApp(api: NexusApi) {
                 when (tab) {
                     "Chat" -> ChatScreen(api, loading, ::runRequest)
                     "Tasks" -> TasksScreen(api, ::runRequest)
-                    else -> SettingsScreen(api, apiOrigin, { apiOrigin = it }, ::runRequest) {
-                        api.setBaseUrl(apiOrigin); error = "API origin saved."
-                    }
+                    else -> SettingsScreen(api, ::runRequest)
                 }
             }
             if (error.isNotBlank()) {
@@ -315,17 +315,14 @@ private fun TasksScreen(api: NexusApi, runRequest: (suspend () -> Unit) -> Unit)
 }
 
 @Composable
-private fun SettingsScreen(api: NexusApi, origin: String, onOrigin: (String) -> Unit,
-                           runRequest: (suspend () -> Unit) -> Unit, onSaved: () -> Unit) {
+private fun SettingsScreen(api: NexusApi, runRequest: (suspend () -> Unit) -> Unit) {
     var provider by remember { mutableStateOf("gemini") }
     var model by remember { mutableStateOf("gemini-2.5-flash") }
     var key by remember { mutableStateOf("") }
     var providers by remember { mutableStateOf<JSONObject?>(null) }
     LaunchedEffect(Unit) { runCatching { withContext(Dispatchers.IO) { api.providers() } }.onSuccess { providers = it } }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField(value = origin, onValueChange = onOrigin, label = { Text("API origin") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        Button(onClick = onSaved) { Text("Save API origin") }
         Text("AI provider", style = MaterialTheme.typography.titleMedium)
         listOf("gemini", "openai", "openrouter", "anthropic").forEach { id ->
             FilterChip(selected = provider == id, onClick = {
@@ -350,5 +347,6 @@ private fun SettingsScreen(api: NexusApi, origin: String, onOrigin: (String) -> 
         }, enabled = key.isNotBlank()) { Text("Save & select provider") }
         Text("Configured providers: " + (providers?.optJSONArray("providers")?.length() ?: 0), color = Muted)
         Text("Provider keys are sent to your NEXUS server and encrypted there. This app does not save API keys.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Text("To switch servers, sign out and change the server URL on the sign-in screen.", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
