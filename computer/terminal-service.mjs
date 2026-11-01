@@ -91,12 +91,11 @@ export function runTerminalSandbox(job, options = {}) {
     "--memory=256m",
     "--memory-swap=256m",
     "--cpus=0.5",
-    "--ulimit", "fsize=4096:4096",
+    "--ulimit", "fsize=1048576:1048576",
     "--ulimit", "nofile=64:64",
     "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001",
     "--tmpfs", "/workspace:rw,nosuid,nodev,size=64m,uid=10001,gid=10001",
-    image,
-    "node", "/app/computer/terminal-sandbox-runner.mjs"
+    image
   ];
   return new Promise((resolve, reject) => {
     const child = spawn(dockerBin, args, {
