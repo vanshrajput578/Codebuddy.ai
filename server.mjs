@@ -5,7 +5,7 @@ import { rateLimit } from "express-rate-limit";
 import { GoogleGenAI } from "@google/genai";
 import pg from "pg";
 import {
-  createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual
+  createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual,\n  createCipheriv, createDecipheriv
 } from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,7 +17,7 @@ const app = express();
 const appDirectory = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 4000);
 const appOrigin = process.env.APP_ORIGIN;
-const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";\nconst providerNames = ["gemini", "openai", "openrouter", "anthropic"];\nconst providerDefaults = { gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini", openrouter: "openai/gpt-4.1-mini", anthropic: "claude-3-5-haiku-latest" };\nconst providerLabels = { gemini: "Google Gemini", openai: "OpenAI", openrouter: "OpenRouter", anthropic: "Anthropic Claude" };\nconst providerRateLimit = rateLimit({ windowMs: 60_000, limit: 8, standardHeaders: "draft-8", legacyHeaders: false });
 const secureCookies = process.env.NODE_ENV === "production";
 const cookieName = secureCookies ? "__Host-nexus_session" : "nexus_session";
 const sessionDays = 7;
@@ -158,7 +158,90 @@ function requireCsrf(req, res, next) {
   }
   next();
 }
-async function rotateCsrf(req) {
+
+function encryptionKey() {
+  const encoded = process.env.CREDENTIAL_ENCRYPTION_KEY || "";
+  let key;
+  try { key = Buffer.from(encoded, "base64"); } catch { key = Buffer.alloc(0); }
+  if (key.length !== 32) throw new Error("Credential encryption is not configured.");
+  return key;
+}
+function encryptCredential(plaintext) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return { iv: iv.toString("base64"), ciphertext: ciphertext.toString("base64"), authTag: cipher.getAuthTag().toString("base64") };
+}
+function decryptCredential(row) {
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(row.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(row.auth_tag, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(row.ciphertext, "base64")), decipher.final()
+  ]).toString("utf8");
+}
+function providerConfig(provider, modelName) {
+  if (!providerNames.includes(provider)) throw new Error("Unsupported provider.");
+  const modelValue = typeof modelName === "string" ? modelName.trim() : "";
+  if (!modelValue || modelValue.length > 120 || !/^[a-zA-Z0-9._:/-]+$/.test(modelValue)) {
+    throw new Error("Invalid model identifier.");
+  }
+  return { provider, model: modelValue };
+}
+async function getProviderCredential(userId, provider) {
+  const result = await pool.query(
+    "SELECT ciphertext,iv,auth_tag,model_name FROM provider_credentials WHERE user_id=$1 AND provider=$2",
+    [userId, provider]
+  );
+  if (!result.rowCount) return null;
+  return { key: decryptCredential(result.rows[0]), model: result.rows[0].model_name };
+}
+async function callProvider(provider, key, modelName, prompt, history = []) {
+  if (provider === "gemini") {
+    const contents = [...history, { role: "user", parts: [{ text: prompt }] }];
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ contents })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("Provider request failed.");
+    return data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("").trim() || "";
+  }
+  if (provider === "openai" || provider === "openrouter") {
+    const endpoint = provider === "openai"
+      ? "https://api.openai.com/v1/chat/completions"
+      : "https://openrouter.ai/api/v1/chat/completions";
+    const messages = [
+      ...history.map(item => ({ role: item.role === "model" ? "assistant" : "user", content: item.parts?.map(part => part.text || "").join("") || "" })),
+      { role: "user", content: prompt }
+    ];
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
+    if (provider === "openrouter") {
+      headers["HTTP-Referer"] = appOrigin || "http://localhost";
+      headers["X-Title"] = "NEXUS AI";
+    }
+    const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ model: modelName, messages }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("Provider request failed.");
+    return data.choices?.[0]?.message?.content?.trim() || "";
+  }
+  if (provider === "anthropic") {
+    const messages = [
+      ...history.map(item => ({ role: item.role === "model" ? "assistant" : "user", content: item.parts?.map(part => part.text || "").join("") || "" })),
+      { role: "user", content: prompt }
+    ];
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: modelName, max_tokens: 4096, messages })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("Provider request failed.");
+    return data.content?.filter(item => item.type === "text").map(item => item.text).join("").trim() || "";
+  }
+  throw new Error("Unsupported provider.");
+}
+\nasync function rotateCsrf(req) {
   const token = randomBytes(32).toString("base64url");
   await pool.query("UPDATE sessions SET csrf_hash=$1 WHERE id=$2", [digest(token), req.auth.session_id]);
   return token;
@@ -239,6 +322,97 @@ app.post("/api/auth/logout", noStore, sameOriginOnly, dbRequired, requireAuth, r
   }
 });
 
+
+app.get("/api/providers", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT provider,model_name,created_at,updated_at FROM provider_credentials WHERE user_id=$1 ORDER BY provider",
+      [req.auth.id]
+    );
+    const selected = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
+    return res.json({
+      providers: result.rows.map(row => ({
+        id: row.provider, name: providerLabels[row.provider], model: row.model_name,
+        configured: true, keyHint: "••••••••", updatedAt: row.updated_at
+      })),
+      activeProvider: selected.rows[0]?.provider || null,
+      supported: providerNames.map(id => ({ id, name: providerLabels[id], defaultModel: providerDefaults[id] }))
+    });
+  } catch {
+    return res.status(503).json({ error: "Could not load provider settings." });
+  }
+});
+
+app.put("/api/providers/:provider", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, authLimiter, async (req, res) => {
+  const provider = req.params.provider;
+  const apiKey = req.body?.apiKey;
+  const requestedModel = req.body?.model || providerDefaults[provider];
+  if (!providerNames.includes(provider)) return res.status(400).json({ error: "Unsupported provider." });
+  if (typeof apiKey !== "string" || apiKey.trim().length < 12 || apiKey.length > 512 || /[\r\n]/.test(apiKey)) {
+    return res.status(400).json({ error: "Enter a valid API key." });
+  }
+  let config;
+  let encrypted;
+  try {
+    config = providerConfig(provider, requestedModel);
+    encrypted = encryptCredential(apiKey.trim());
+  } catch {
+    return res.status(400).json({ error: "Invalid provider settings or server encryption is not configured." });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO provider_credentials (user_id,provider,model_name,ciphertext,iv,auth_tag)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (user_id,provider) DO UPDATE SET model_name=EXCLUDED.model_name,ciphertext=EXCLUDED.ciphertext,iv=EXCLUDED.iv,auth_tag=EXCLUDED.auth_tag,updated_at=now()`,
+      [req.auth.id, config.provider, config.model, encrypted.ciphertext, encrypted.iv, encrypted.authTag]
+    );
+    return res.json({ ok: true, provider, model: config.model, keyHint: "••••••••" });
+  } catch {
+    return res.status(503).json({ error: "Could not securely save provider credentials." });
+  }
+});
+
+app.delete("/api/providers/:provider", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!providerNames.includes(req.params.provider)) return res.status(400).json({ error: "Unsupported provider." });
+  try {
+    await pool.query("DELETE FROM provider_credentials WHERE user_id=$1 AND provider=$2", [req.auth.id, req.params.provider]);
+    await pool.query("DELETE FROM user_preferences WHERE user_id=$1 AND provider=$2", [req.auth.id, req.params.provider]);
+    return res.json({ ok: true });
+  } catch {
+    return res.status(503).json({ error: "Could not remove provider credentials." });
+  }
+});
+
+app.put("/api/providers/active", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  const provider = req.body?.provider;
+  if (!providerNames.includes(provider)) return res.status(400).json({ error: "Unsupported provider." });
+  try {
+    const configured = await pool.query("SELECT 1 FROM provider_credentials WHERE user_id=$1 AND provider=$2", [req.auth.id, provider]);
+    if (!configured.rowCount) return res.status(409).json({ error: "Add this provider's API key before selecting it." });
+    await pool.query(
+      `INSERT INTO user_preferences (user_id,provider) VALUES ($1,$2)
+       ON CONFLICT (user_id) DO UPDATE SET provider=EXCLUDED.provider,updated_at=now()`,
+      [req.auth.id, provider]
+    );
+    return res.json({ ok: true, activeProvider: provider });
+  } catch {
+    return res.status(503).json({ error: "Could not update active provider." });
+  }
+});
+
+app.post("/api/providers/:provider/test", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, providerRateLimit, async (req, res) => {
+  if (!providerNames.includes(req.params.provider)) return res.status(400).json({ error: "Unsupported provider." });
+  try {
+    const credential = await getProviderCredential(req.auth.id, req.params.provider);
+    if (!credential) return res.status(404).json({ error: "Save an API key for this provider first." });
+    const answer = await callProvider(req.params.provider, credential.key, credential.model, "Reply with exactly: NEXUS connection successful");
+    if (!answer) return res.status(502).json({ error: "Provider returned an empty response." });
+    return res.json({ ok: true, provider: req.params.provider, model: credential.model, message: "Connection successful." });
+  } catch {
+    return res.status(502).json({ error: "Provider connection failed. Check the key, model and provider status." });
+  }
+});
+
 app.get("/api/conversations", noStore, dbRequired, requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
@@ -292,10 +466,12 @@ app.post("/api/chat", noStore, sameOriginOnly, dbRequired, chatLimiter, requireA
   if (requestedConversationId && !/^[0-9a-f-]{36}$/i.test(requestedConversationId)) {
     return res.status(400).json({ error: "Invalid conversation ID." });
   }
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(503).json({ error: "AI provider is not configured on the server." });
-  }
   try {
+    const active = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
+    const selectedProvider = active.rows[0]?.provider;
+    if (!selectedProvider) return res.status(409).json({ error: "Configure an AI provider in Settings first." });
+    const credential = await getProviderCredential(req.auth.id, selectedProvider);
+    if (!credential) return res.status(409).json({ error: "The selected provider key is missing. Configure it in Settings." });
     let history = [];
     if (requestedConversationId) {
       const owned = await pool.query(
@@ -313,10 +489,7 @@ app.post("/api/chat", noStore, sameOriginOnly, dbRequired, chatLimiter, requireA
       }));
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const contents = [...history, { role: "user", parts: [{ text: message.trim() }] }];
-    const result = await ai.models.generateContent({ model, contents });
-    const answer = result.text;
+    const answer = await callProvider(selectedProvider, credential.key, credential.model, message.trim(), history);
     if (typeof answer !== "string" || !answer.trim()) {
       return res.status(502).json({ error: "The AI provider returned an empty response." });
     }
