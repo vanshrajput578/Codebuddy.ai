@@ -53,3 +53,35 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   provider VARCHAR(30) NOT NULL CHECK (provider IN ('gemini','openai','openrouter','anthropic')),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS user_memories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category VARCHAR(24) NOT NULL DEFAULT 'note' CHECK (category IN ('note','preference','project','personal')),
+  content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 4000),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_memories_user_updated_idx ON user_memories(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(120) NOT NULL,
+  prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 8000),
+  status VARCHAR(24) NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued','planning','awaiting_approval','running','paused','completed','failed','cancelled')),
+  plan JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_tasks_user_updated_idx ON agent_tasks(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_task_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+  event_type VARCHAR(40) NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_task_events_task_created_idx ON agent_task_events(task_id, created_at);
