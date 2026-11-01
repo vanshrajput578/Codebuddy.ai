@@ -553,7 +553,7 @@ const maxAgentReplans = 2;
 
 async function replanAgentTask(taskId, userId, leaseToken) {
   const snapshot = await pool.query(
-    `SELECT t.prompt,t.plan,t.current_step,t.replan_count,t.status,p.provider
+    `SELECT t.prompt,t.plan,t.current_step,t.replan_count,t.status,t.agent_profile,p.provider
      FROM agent_tasks t LEFT JOIN user_preferences p ON p.user_id=t.user_id
      WHERE t.id=$1 AND t.user_id=$2 AND t.lease_token=$3::uuid AND t.lease_expires_at>now()`,
     [taskId, userId, leaseToken]
@@ -562,12 +562,13 @@ async function replanAgentTask(taskId, userId, leaseToken) {
     return { status: snapshot.rows[0]?.status || "missing" };
   }
   const task = snapshot.rows[0];
+  const agentDefinition = getAgentDefinition(task.agent_profile);
   if (Number(task.replan_count || 0) >= maxAgentReplans) throw new Error("The task reached its dynamic replan limit.");
   if (!task.provider) throw new Error("No AI provider is configured for replanning.");
   const credential = await getProviderCredential(userId, task.provider);
   if (!credential) throw new Error("The selected provider credential is unavailable for replanning.");
 
-  const existingPlan = safeAgentPlan(task.plan);
+  const existingPlan = safeAgentPlan(task.plan, task.agent_profile);
   const completedCount = Number(task.current_step || 0);
   const completedSteps = existingPlan.steps.slice(0, completedCount);
   if (completedSteps.length !== completedCount || completedSteps.some(step => step.status !== "completed")) {
@@ -576,6 +577,7 @@ async function replanAgentTask(taskId, userId, leaseToken) {
   const evidence = completedSteps.map(step => ({ id: step.id, tool: step.tool, input: step.input, result: step.result }));
   const planningPrompt = [
     "NEXUS_AGENT_REPLAN_JSON",
+    "Specialist profile: " + agentDefinition.label + ". " + agentDefinition.systemPrompt,
     "Create a continuation plan using the original task and completed tool results below.",
     "Return ONLY JSON with a steps array. Each step requires title, description, tool and input; replanAfter is an optional boolean.",
     "Return continuation steps only. Do not repeat or re-execute completed steps.",
@@ -585,10 +587,10 @@ async function replanAgentTask(taskId, userId, leaseToken) {
     "Use 1 to " + (maxAgentSteps - completedCount) + " steps and always end with response.compose. Set replanAfter=true only on a non-final step when another evidence-driven continuation is necessary.",
     "Original user task: " + task.prompt,
     "Completed tool evidence (JSON): " + JSON.stringify(evidence).slice(0, 12000),
-    "Available tools:\\n" + getAgentToolPrompt()
+    "Available tools:\\n" + getAgentToolPrompt(agentDefinition.allowedTools)
   ].join("\\n");
   const rawContinuation = await callProvider(task.provider, credential.key, credential.model, planningPrompt, []);
-  const continuation = parseAgentPlan(rawContinuation);
+  const continuation = parseAgentPlan(rawContinuation, agentDefinition.allowedTools);
   if (continuation.steps.at(-1).tool !== "response.compose") throw new Error("A continuation plan must end with response.compose.");
   const combinedSteps = [
     ...completedSteps,
