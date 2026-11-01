@@ -31,7 +31,9 @@ Acceptance: users can register and only access their own data.
 ## Phase 3 — AI providers and chat
 - [x] Add a server-side provider adapter contract for Gemini, OpenAI, OpenRouter and Anthropic.
 - [x] Implement Gemini, OpenRouter, OpenAI and Anthropic API adapters.
-- [x] Add per-user AES-256-GCM encrypted provider credential storage.\n- [x] Add provider settings UI, per-user provider selection and credential deletion.\n- [x] Add provider request timeouts and PostgreSQL-backed integration coverage.
+- [x] Add per-user AES-256-GCM encrypted provider credential storage.
+- [x] Add provider settings UI, per-user provider selection and credential deletion.
+- [x] Add provider request timeouts and PostgreSQL-backed integration coverage.
 - [ ] Model capability registry.
 - [ ] Streaming chat and usage/error reporting.
 - [x] Add authenticated provider connection test endpoint.
