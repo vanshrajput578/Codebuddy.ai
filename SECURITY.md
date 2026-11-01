@@ -13,7 +13,7 @@
 - JSON request size limit and message length validation.
 - Per-IP request rate limiting.
 - No-store response headers on API endpoints.
-- Provider errors are not passed to the browser.
+- Provider keys are encrypted at rest using AES-256-GCM with a server-only 32-byte master key.\n- Provider APIs support Gemini, OpenAI, OpenRouter and Anthropic through server-side adapters.\n- Provider key management requires an authenticated session and CSRF token.\n- Provider metadata responses never return the original key.\n- Provider errors are not passed to the browser.
 - No request-body or secret logging.
 
 ## Production requirements before public launch
