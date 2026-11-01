@@ -415,10 +415,13 @@ if (!process.env.DATABASE_URL) {
         await pool.query("UPDATE agent_tasks SET status='failed',result='Integration fixture cleanup' WHERE status='running'");
         const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
         const child = spawn(process.execPath, ["tests/fixtures/worker-hold.mjs"], {
-          cwd: process.cwd(), env: process.env, stdio: "inherit"
+          cwd: process.cwd(), env: process.env, stdio: ["ignore", "pipe", "pipe"]
         });
+        let childOutput = "";
+        child.stdout.on("data", chunk => { childOutput += chunk.toString(); });
+        child.stderr.on("data", chunk => { childOutput += chunk.toString(); });
         let childClaimed = false;
-        for (let attempt = 0; attempt < 100; attempt += 1) {
+        for (let attempt = 0; attempt < 200; attempt += 1) {
           const lease = await pool.query("SELECT lease_owner FROM agent_tasks WHERE id=$1", [crashTask.rows[0].id]);
           if (lease.rows[0]?.lease_owner === "hard-kill-worker") { childClaimed = true; break; }
           if (child.exitCode !== null) break;
@@ -429,7 +432,7 @@ if (!process.env.DATABASE_URL) {
           child.kill("SIGKILL");
           await failedChildExit;
         }
-        assert.equal(childClaimed, true, "subprocess worker must claim the test task; exit=" + child.exitCode + " signal=" + child.signalCode);
+        assert.equal(childClaimed, true, "subprocess worker must claim the test task; exit=" + child.exitCode + " signal=" + child.signalCode + " output=" + childOutput);
         if (child.exitCode === null && child.signalCode === null) {
           const childExit = new Promise(resolve => child.once("exit", resolve));
           child.kill("SIGKILL");
