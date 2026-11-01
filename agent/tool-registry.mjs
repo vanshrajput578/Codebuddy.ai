@@ -10,6 +10,7 @@ const toolDefinitions = [
   { id: "time.now", description: "Get the current date and time in an IANA timezone. Input: {timezone?:string}; defaults to Asia/Kolkata.", requiresApproval: false },
   { id: "browser.open", description: "Open one public HTTP(S) webpage in the isolated read-only browser and extract its visible text. Input: {url:string}. Outbound browsing requires explicit plan approval. Set replanAfter=true so the next step can use page evidence.", requiresApproval: true },
   { id: "terminal.run", description: "Run one command in a disposable non-root, no-network terminal sandbox and transfer a bounded set of project files in and out. Input: {command:string,files?:[{path:string,contentBase64:string}],timeoutMs?:number}. Every command requires explicit plan approval. Set replanAfter=true to use command output.", requiresApproval: true },
+  { id: "agent.delegate", description: "Create a child task for a Researcher, Developer or Reviewer specialist using only that profile's server-defined tool scope. Input: {profile:string,objective:string}. Delegation requires approval; the child plan requires its own separate approval. Set replanAfter=true to inspect the child task reference.", requiresApproval: true },
   { id: "response.compose", description: "Return the final response text. Input: {text:string}. Must be the final plan step.", requiresApproval: false }
 ];
 
@@ -59,6 +60,14 @@ export function validateAgentToolInput(toolId, rawInput) {
     case "browser.open": {
       const url = parseBrowserUrl(requireText(rawInput.url, "browser URL", 2048));
       return { url: url.href };
+    }
+    case "agent.delegate": {
+      const profile = requireText(rawInput.profile, "specialist profile", 32);
+      if (!["researcher", "developer", "reviewer"].includes(profile)) {
+        throw new Error("Delegation profile must be Researcher, Developer or Reviewer.");
+      }
+      const objective = requireText(rawInput.objective, "delegated objective", 2000);
+      return { profile, objective };
     }
     case "terminal.run": {
       const command = requireText(rawInput.command, "terminal command", 4000);
@@ -229,6 +238,8 @@ export async function executeAgentTool(client, userId, toolId, rawInput) {
         text: payload.result.text.slice(0, 12_000)
       };
     }
+    case "agent.delegate":
+      throw new Error("Delegation must be executed by the durable agent runtime.");
     case "terminal.run": {
       const workerUrl = process.env.TERMINAL_WORKER_URL || "http://127.0.0.1:4003";
       const token = process.env.TERMINAL_WORKER_TOKEN || "";
