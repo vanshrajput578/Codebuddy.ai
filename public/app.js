@@ -224,7 +224,8 @@ document.getElementById('deleteProvider').addEventListener('click',async()=>{
     loadProviderSettings();
   }catch(error){providerError.textContent=error.message;}
 });
-\nasync function sendMessage(text){
+
+async function sendMessage(text){
   const value=String(text||'').trim();
   if(!value||sending)return;
   addMessage(value,'user');
