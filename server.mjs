@@ -1187,7 +1187,7 @@ app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requi
 app.get("/api/agent/tasks", noStore, dbRequired, requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id,title,status,agent_profile,current_step,created_at,updated_at FROM agent_tasks WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 50",
+      "SELECT id,title,status,agent_profile,parent_task_id,current_step,created_at,updated_at FROM agent_tasks WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 50",
       [req.auth.id]
     );
     return res.json({ tasks: result.rows });
@@ -1200,7 +1200,7 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   try {
     const task = await pool.query(
-      "SELECT id,title,prompt,status,agent_profile,allowed_tools,plan,current_step,replan_count,result,approved_at,worker_attempts,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      "SELECT id,title,prompt,status,agent_profile,allowed_tools,parent_task_id,plan,current_step,replan_count,result,approved_at,worker_attempts,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
       [req.params.id, req.auth.id]
     );
     if (!task.rowCount) return res.status(404).json({ error: "Task not found." });
@@ -1211,6 +1211,30 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
     return res.json({ task: task.rows[0], events: events.rows });
   } catch {
     return res.status(503).json({ error: "Could not load task details." });
+  }
+});
+
+app.get("/api/agent/tasks/:id/delegations", noStore, dbRequired, requireAuth, async (req, res) => {
+  if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
+  try {
+    const parent = await pool.query(
+      "SELECT id FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      [req.params.id, req.auth.id]
+    );
+    if (!parent.rowCount) return res.status(404).json({ error: "Task not found." });
+    const result = await pool.query(
+      `SELECT d.id,d.parent_task_id,d.child_task_id,d.agent_profile,d.objective,d.allowed_tools,
+              d.status AS delegation_status,d.result_summary,d.created_at,d.updated_at,
+              child.title AS child_title,child.status AS child_status,child.current_step
+       FROM agent_delegations d
+       INNER JOIN agent_tasks child ON child.id=d.child_task_id AND child.user_id=d.user_id
+       WHERE d.parent_task_id=$1 AND d.user_id=$2
+       ORDER BY d.created_at ASC`,
+      [req.params.id, req.auth.id]
+    );
+    return res.json({ delegations: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load delegated tasks." });
   }
 });
 
