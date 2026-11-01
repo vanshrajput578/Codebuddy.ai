@@ -399,7 +399,6 @@ app.get("/api/providers", noStore, dbRequired, requireAuth, async (req, res) => 
       "SELECT provider,model_name,created_at,updated_at FROM provider_credentials WHERE user_id=$1 ORDER BY provider",
       [req.auth.id]
     );
-    const agentDefinition = getAgentDefinition(started.rows[0].agent_profile);
     const selected = await pool.query("SELECT provider FROM user_preferences WHERE user_id=$1", [req.auth.id]);
     return res.json({
       providers: result.rows.map(row => ({
