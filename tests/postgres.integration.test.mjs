@@ -37,6 +37,7 @@ if (!process.env.DATABASE_URL) {
     const stepLimitMigration = await readFile(new URL("../db/migrations/004_agent_step_limit.sql", import.meta.url), "utf8");
     const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
     const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
+    const providerUsageMigration = await readFile(new URL("../db/migrations/007_provider_usage.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -46,6 +47,8 @@ if (!process.env.DATABASE_URL) {
     await pool.query(replanningMigration);
     await pool.query(workerMigration);
     await pool.query(workerMigration);
+    await pool.query(providerUsageMigration);
+    await pool.query(providerUsageMigration);
     let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
