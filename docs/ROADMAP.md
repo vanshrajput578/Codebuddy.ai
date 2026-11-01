@@ -21,11 +21,11 @@ Acceptance: app builds, navigation works, auth uses a real API, tests pass.
 ## Phase 2 — Backend and accounts
 - [x] Add email/password registration and login endpoints.
 - [x] Add scrypt password hashing and hashed opaque sessions.
-- [x] Add PostgreSQL schema for users, sessions and conversation records.
-- [x] Add PostgreSQL schema script for core account and conversation tables.
+- [x] Add PostgreSQL schema and setup script for users, sessions and conversation records.
 - [x] Registration, login, current-session and logout endpoints.
 - [x] Require authenticated sessions and CSRF validation for chat.
-- [x] User-scoped conversation and message persistence.\n- [x] Recent conversation history and bounded context for Gemini chat.
+- [x] User-scoped conversation and message persistence.
+- [x] Recent conversation history and bounded context for Gemini chat.
 Acceptance: users can register and only access their own data.
 
 ## Phase 3 — AI providers and chat
