@@ -41,11 +41,11 @@ Acceptance: configured provider returns a real streamed response. Current: crede
 
 ## Phase 4 — Agent runtime and memory
 - [x] Add PostgreSQL-backed durable task records and execution-event history (queue foundation only).
-- [ ] Planning and bounded execution loop.
-- [ ] Tool schema validation and permission checks.
-- [ ] Approval and pause/resume transitions (cancellation endpoint exists).
+- [x] Provider-assisted planning with strict JSON validation and a five-step execution bound.
+- [x] Allowlisted memory search/save and response composition tools with server-side input validation.
+- [x] Explicit plan approval/rejection, pause/resume/cancel transitions and restart recovery.
 - [x] Add user-scoped persistent memory CRUD API.
-Acceptance: tasks survive restart and restricted tools require approval. Current: task persistence/cancellation and memory CRUD are implemented; planner/executor, tool validation and approval workflow remain incomplete.
+Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, tool allowlist, memory-write approval gate, task UI, lifecycle controls and restart-to-paused recovery are implemented; external tools and advanced replanning remain out of scope.
 
 ## Phase 5 — Android
 - [ ] Expo app and shared API client.
@@ -84,7 +84,7 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 | 1 — Web foundation | Partial. Same-origin responsive HTML/CSS/JS UI and API are present; React/Next.js conversion and accessibility audit are not done. | Node syntax and static frontend/security tests pass. No browser/device visual QA was run. |
 | 2 — Backend and accounts | Core account/session/conversation APIs implemented. Email verification, password recovery, quotas and account deletion remain absent. | PostgreSQL CI integration covers registration/login, CSRF, provider ownership, conversation ownership, logout and persistence. |
 | 3 — AI providers and chat | Provider vault, selection and Gemini/OpenAI/OpenRouter/Anthropic adapters implemented. Model registry, streaming, usage reporting and provider retries remain incomplete. | CI uses a mocked OpenAI endpoint to verify key decryption, tenant-bound ciphertext, provider routing, chat persistence and bounded context. Real third-party API calls are not verified. |
-| 4 — Agent runtime and memory | Partial. Durable task queue/event records, cancellation and user-scoped memory CRUD APIs exist; no planner, worker, tool execution or approval flow. | PostgreSQL CI tests create/read/cancel tasks and create/read/update/delete user memory with cross-user isolation. |
+| 4 — Agent runtime and memory | Bounded provider-assisted planner, allowlisted memory/response tools, approval gate, background executor, task UI, pause/resume/cancel/reject and restart recovery. No external shell/browser tools or multi-step model replanning. | PostgreSQL CI exercises plan validation, no execution before approval, approved execution, memory writes, cross-user isolation, rejection, pause/resume and invalid-tool rejection. |
 | 5 — Android | Not implemented. | No Android project, APK or device test exists. |
 | 6 — Computer tools | Not implemented. | No isolated browser/terminal worker or sandbox tests exist. |
 | 7 — Multi-agent and automations | Not implemented. | No delegation, scheduler or notification tests exist. |
@@ -102,4 +102,4 @@ GitHub Actions provisions PostgreSQL 16 and runs:
 - Security regression checks for origin enforcement, fail-closed behaviour and frontend delivery.
 - Gitleaks secret scanning.
 
-Latest verified code commit: `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`. The backend workflow passed on commit `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`: 8 top-level Node tests, 0 failures, 0 skipped. The PostgreSQL integration test provisions a real PostgreSQL 16 CI service and exercises account/session, provider vault encryption/tamper detection, mocked OpenAI connection/chat, history context, per-user memory CRUD/isolation, durable task creation/events/cancellation and cross-user access controls. The secret scan also passed. Later commits in the branch are documentation-only. Real provider credentials and endpoints have not been tested. Phase 3 streaming/capability registry remains incomplete. Phase 4 is a backend foundation only; planner/executor, tool permission validation, approval/pause/resume flow and task UI remain incomplete. Phases 5–7 are not implemented. Phase 8 is only a partial security baseline; production deployment, backups, monitoring, quotas and independent review remain outstanding.
+Latest verified code commit: `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`. The backend workflow passed on commit `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`: 8 top-level Node tests, 0 failures, 0 skipped. The PostgreSQL integration test provisions a real PostgreSQL 16 CI service and exercises account/session, provider vault encryption/tamper detection, mocked OpenAI connection/chat, history context, per-user memory CRUD/isolation, durable task creation/events/cancellation and cross-user access controls. The secret scan also passed. Later commits in the branch are documentation-only. Real provider credentials and endpoints have not been tested. Phase 3 streaming/capability registry remains incomplete. Phase 4 now has a bounded and approval-gated runtime with a task UI. It is not a general-purpose computer-use agent: external browser, terminal, file and device tools remain deliberately unavailable. Phases 5–7 are not implemented. Phase 8 is only a partial security baseline; production deployment, backups, monitoring, quotas and independent review remain outstanding.
