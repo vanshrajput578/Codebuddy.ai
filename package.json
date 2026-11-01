@@ -11,13 +11,15 @@
     "worker": "node agent/worker.mjs",
     "dev": "node --watch server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check agent/worker.mjs && node --check agent/worker-queue.mjs && node --check agent/tool-registry.mjs && node --check app.js && node --check public/app.js && node --check tests/security.test.mjs && node --check tests/postgres.integration.test.mjs && node --check tests/agent-tool-registry.test.mjs"
+    "check": "node --check server.mjs && node --check agent/worker.mjs && node --check agent/worker-queue.mjs && node --check agent/tool-registry.mjs && node --check app.js && node --check public/app.js && node --check tests/security.test.mjs && node --check tests/postgres.integration.test.mjs && node --check tests/agent-tool-registry.test.mjs && node --check computer/browser-policy.mjs && node --check computer/browser-service.mjs && node --check computer/browser-worker.mjs && node --check tests/browser-policy.test.mjs && node --check tests/browser-service.test.mjs",
+    "browser-worker": "node computer/browser-worker.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.1",
     "helmet": "^8.1.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "playwright": "1.64.1"
   }
 }
