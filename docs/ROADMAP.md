@@ -76,7 +76,9 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 - [ ] Security review.
 - [ ] Deployment runbooks.
 
-## Phase verification audit (2026-11-01)
+## Historical phase verification audit (snapshot: 2026-11-01)
+
+The table below records the repository state at that audit timestamp. It is a historical snapshot, not the current branch status; newer implementation increments are recorded after the table.
 
 | Phase | Implementation status | Verification result |
 |---|---|---|
@@ -91,6 +93,18 @@ Acceptance: delegated jobs are traceable and preserve permissions.
 | 8 — Production hardening | Partial security baseline only. | CI and secret scanning pass; deployment, backups, monitoring, quotas and independent security review are not verified. |
 
 A passing CI run is evidence for the tests it executes, not proof that unimplemented phases work. Phase completion requires each phase's stated acceptance criteria to pass.
+
+## Phase 6 browser implementation update
+
+On branch `phase-8-computer-tools-browser`, the following first computer-tools slice is implemented in code:
+- Dedicated Playwright browser worker and non-root container image.
+- Strict HTTP(S)-only URL parsing, DNS result checks and private/reserved address rejection.
+- Mandatory outbound egress proxy configuration; deployment still must enforce proxy-only network egress and destination-IP ACLs.
+- Worker bearer authentication, strict job schema, bounded body, one-job concurrency, per-user six-jobs/minute quota, 12-second navigation timeout, 40-request limit and 12,000-character extraction cap.
+- Fresh browser context per job; downloads, WebSockets, service workers and non-GET/HEAD methods blocked.
+- Approval-required `browser.open` agent tool; plan validation requires evidence-driven replanning, page text is untrusted data, and worker execution happens outside the PostgreSQL task transaction with lease/state revalidation before result persistence.
+
+Remaining for Phase 6: CI acceptance on the final branch head, network-level egress verification in a real deployment, and the separate terminal/file sandbox plus their path traversal and command security tests. Do not treat the browser slice as full Phase 6 completion.
 
 ## Current truth
 
