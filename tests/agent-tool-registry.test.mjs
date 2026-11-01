@@ -119,7 +119,7 @@ test("browser tool calls only the authenticated internal worker and returns boun
     assert.equal(captured.url, "http://nexus-browser-worker:4002/execute");
     assert.equal(captured.options.method, "POST");
     assert.equal(captured.options.headers.authorization, `Bearer ${process.env.BROWSER_WORKER_TOKEN}`);
-    assert.deepEqual(JSON.parse(captured.options.body), { userId: "owner-id", url: "https://example.com/" });
+    assert.deepEqual(JSON.parse(captured.options.body), { userId: "8c6e7cb2-8c3a-4c3b-9f52-0c9f8b4d0a12", url: "https://example.com/" });
   } finally {
     globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.BROWSER_WORKER_TOKEN;
