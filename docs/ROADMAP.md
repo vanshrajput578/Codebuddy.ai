@@ -56,10 +56,10 @@ Acceptance: tasks survive restart and restricted tools require approval. Current
 Acceptance: Android and web share account and conversation history.
 
 ## Phase 6 — Computer tools
-- [ ] Isolated browser worker.
+- [ ] Isolated browser worker (initial containerized Playwright runtime and policy layer committed on `phase-8-computer-tools-browser`; agent planner integration and CI acceptance remain).
 - [ ] Isolated terminal and file workspace.
-- [ ] Sandbox quotas and cleanup.
-- [ ] SSRF, path traversal and command security tests.
+- [ ] Sandbox quotas and cleanup (browser per-user request quota, concurrency bound and per-job context cleanup added; terminal/file quotas remain).
+- [ ] SSRF, path traversal and command security tests (browser URL/DNS test suite added; full CI acceptance and network-level egress policy verification remain).
 Acceptance: tools execute in isolation with enforced limits.
 
 ## Phase 7 — Multi-agent and automations
