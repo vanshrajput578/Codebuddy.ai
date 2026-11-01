@@ -42,3 +42,7 @@ jobs:
         run: npm run check
       - name: Run tests
         run: npm test
+      - name: Build isolated browser worker image
+        run: docker build --file computer/Dockerfile --tag nexus-browser-worker:ci .
+      - name: Build isolated terminal sandbox image
+        run: docker build --file computer/terminal-sandbox.Dockerfile --tag nexus-terminal-sandbox:ci .
