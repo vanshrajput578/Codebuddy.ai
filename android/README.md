@@ -24,7 +24,7 @@ The app supports account registration/login, session restoration, chat, task mon
 
 The server-issued HttpOnly session cookie is persisted encrypted with an AES key held by Android Keystore. CSRF tokens are refreshed from GET /api/auth/me after session restoration. No session token or provider API key is stored in plaintext preferences.
 
-Only HTTPS origins are accepted in release builds. Cleartext HTTP is allowed in debug builds only for Android emulator loopback (10.0.2.2) and localhost.
+Only HTTPS API origins are accepted in all builds. The app disables cleartext HTTP traffic.
 
 ## Current limitations
 - Push notifications, biometric re-authentication, offline queueing and Play Store signing are not implemented.
