@@ -106,7 +106,7 @@ test("browser tool calls only the authenticated internal worker and returns boun
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
-    const result = await executeAgentTool(null, "owner-id", "browser.open", { url: "https://example.com/" });
+    const result = await executeAgentTool(null, "8c6e7cb2-8c3a-4c3b-9f52-0c9f8b4d0a12", "browser.open", { url: "https://example.com/" });
     assert.deepEqual(result, {
       url: "https://example.com/", title: "Example", status: 200, text: "Visible public content"
     });
@@ -127,7 +127,7 @@ test("browser tool fails closed when the isolated worker is not configured", asy
   const originalToken = process.env.BROWSER_WORKER_TOKEN;
   delete process.env.BROWSER_WORKER_TOKEN;
   try {
-    await assert.rejects(executeAgentTool(null, "owner-id", "browser.open", { url: "https://example.com" }), /not configured/);
+    await assert.rejects(executeAgentTool(null, "8c6e7cb2-8c3a-4c3b-9f52-0c9f8b4d0a12", "browser.open", { url: "https://example.com" }), /not configured/);
   } finally {
     if (originalToken === undefined) delete process.env.BROWSER_WORKER_TOKEN;
     else process.env.BROWSER_WORKER_TOKEN = originalToken;
