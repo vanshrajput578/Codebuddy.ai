@@ -19,8 +19,13 @@ export function getAgentToolNames() {
   return toolDefinitions.map(tool => tool.id);
 }
 
-export function getAgentToolPrompt() {
-  return toolDefinitions.map(tool => `- ${tool.id}: ${tool.description}`).join("\n");
+export function getAgentToolPrompt(allowedTools = getAgentToolNames()) {
+  if (!Array.isArray(allowedTools) || allowedTools.some(id => !toolById.has(id))) {
+    throw new Error("Invalid agent tool scope.");
+  }
+  const scope = new Set(allowedTools);
+  return toolDefinitions.filter(tool => scope.has(tool.id))
+    .map(tool => `- ${tool.id}: ${tool.description}`).join("\n");
 }
 
 export function isAgentToolApprovalRequired(toolId) {
