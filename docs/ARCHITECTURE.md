@@ -88,4 +88,4 @@ The Phase 4 agent runner accepts provider-generated JSON plans with at most five
 - `memory.save`: writes only to the authenticated user's memory and is marked approval-required.
 - `response.compose`: returns bounded text and has no external side effects.
 
-All plans remain in `awaiting_approval` until the user approves. The runner persists each step result and event in PostgreSQL, checks task status between steps, and supports pause, resume, reject and cancel. On server restart, any task left in `running` is changed to `paused` and requires explicit resume. No shell, arbitrary HTTP, browser, file-system or device-control tools are exposed.
+All plans remain in `awaiting_approval` until the user approves. The runner persists each step result and event in PostgreSQL, checks task status between steps, and supports pause, resume, reject and cancel. On server restart, any task left in `running` is changed to `paused` and requires explicit resume. The only external computer capability currently exposed is approval-gated, read-only `browser.open`; shell execution, arbitrary HTTP, filesystem access and device control remain unavailable.
