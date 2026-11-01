@@ -29,10 +29,11 @@ CREATE TABLE IF NOT EXISTS agent_schedule_runs (
     CHECK (status IN ('queued','failed','cancelled')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT agent_schedule_runs_schedule_time_uq UNIQUE (schedule_id,scheduled_for),
+  CONSTRAINT agent_schedule_runs_id_user_uq UNIQUE (id,user_id),
   CONSTRAINT agent_schedule_runs_schedule_owner_fk
     FOREIGN KEY (schedule_id,user_id) REFERENCES agent_schedules(id,user_id) ON DELETE CASCADE,
   CONSTRAINT agent_schedule_runs_task_owner_fk
-    FOREIGN KEY (task_id,user_id) REFERENCES agent_tasks(id,user_id) ON DELETE SET NULL
+    FOREIGN KEY (task_id,user_id) REFERENCES agent_tasks(id,user_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS agent_schedule_runs_user_idx
@@ -56,7 +57,7 @@ CREATE TABLE IF NOT EXISTS user_notifications (
   CONSTRAINT user_notifications_schedule_owner_fk
     FOREIGN KEY (schedule_id,user_id) REFERENCES agent_schedules(id,user_id) ON DELETE CASCADE,
   CONSTRAINT user_notifications_run_owner_fk
-    FOREIGN KEY (schedule_run_id) REFERENCES agent_schedule_runs(id) ON DELETE CASCADE
+    FOREIGN KEY (schedule_run_id,user_id) REFERENCES agent_schedule_runs(id,user_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS user_notifications_inbox_idx
