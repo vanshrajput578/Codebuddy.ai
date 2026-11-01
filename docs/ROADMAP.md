@@ -57,7 +57,7 @@ Acceptance: Android and web share account and conversation history.
 
 ## Phase 6 — Computer tools
 - [ ] Isolated browser worker (containerized Playwright runtime, SSRF policy, approval-gated `browser.open` and out-of-transaction durable-agent integration committed on `phase-8-computer-tools-browser`; CI acceptance and deployment network-policy verification remain).
-- [ ] Isolated terminal and file workspace (approval-gated `terminal.run`, disposable no-network Docker container, explicit bounded file transfer and controller added on `phase-8-computer-tools-browser`; Docker image build and dedicated-daemon isolation remain unverified).
+- [ ] Isolated terminal and file workspace (approval-gated `terminal.run`, disposable no-network Docker container, AES-256-GCM encrypted task-scoped PostgreSQL files, owner-only list/download APIs and Agent Tasks upload/download UI added on `phase-8-computer-tools-browser`; Docker image build and dedicated-daemon isolation remain unverified).
 - [ ] Sandbox quotas and cleanup (browser six jobs/minute, single-job concurrency, 12-second navigation cap, 40-request limit and per-job cleanup; terminal 10 jobs/minute per user, two global concurrent jobs, 15-second timeout, 64 MiB scratch workspace and forced container cleanup are implemented in code; CI acceptance pending).
 - [ ] SSRF, path traversal and command security tests (browser URL/DNS-rebinding tests and terminal relative-path traversal, schema, auth, quota, concurrency and approval-plan tests added; CI acceptance and network-level egress policy verification remain).
 Acceptance: tools execute in isolation with enforced limits.
