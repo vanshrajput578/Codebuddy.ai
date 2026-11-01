@@ -100,6 +100,16 @@ export async function processDueAgentSchedules(pool, options = {}) {
     }
 
     await client.query("COMMIT");
+    if (typeof options.planTask === "function") {
+      for (const task of queued) {
+        try {
+          task.planStatus = (await options.planTask(task.taskId, task.userId))?.status || "unknown";
+        } catch (error) {
+          options.onError?.(error);
+          task.planStatus = "failed";
+        }
+      }
+    }
     return queued;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
