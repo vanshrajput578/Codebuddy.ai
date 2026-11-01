@@ -10,7 +10,8 @@ if (!process.env.DATABASE_URL) {
   process.env.APP_ORIGIN = "http://127.0.0.1:43127";
   process.env.CREDENTIAL_ENCRYPTION_KEY = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=";
 
-  const { app, pool, recoverRunningAgentTasks } = await import("../server.mjs");
+  const { app, pool, runAgentTask } = await import("../server.mjs");
+  const { startAgentWorker } = await import("../agent/worker-queue.mjs");
   const origin = process.env.APP_ORIGIN;
   const baseUrl = origin;
   let server;
@@ -34,6 +35,7 @@ if (!process.env.DATABASE_URL) {
     const migration = await readFile(new URL("../db/migrations/003_agent_runtime.sql", import.meta.url), "utf8");
     const stepLimitMigration = await readFile(new URL("../db/migrations/004_agent_step_limit.sql", import.meta.url), "utf8");
     const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
+    const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -41,6 +43,9 @@ if (!process.env.DATABASE_URL) {
     await pool.query(stepLimitMigration);
     await pool.query(replanningMigration);
     await pool.query(replanningMigration);
+    await pool.query(workerMigration);
+    await pool.query(workerMigration);
+    const worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -363,12 +368,10 @@ if (!process.env.DATABASE_URL) {
           method: "POST", headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
         });
         assert.equal(recoveryPlan.status, 200);
-        await pool.query("UPDATE agent_tasks SET status='running',approved_at=now() WHERE id=$1 AND user_id=$2", [recoveryId, first.user.id]);
-        assert.equal(await recoverRunningAgentTasks(), 1);
-        const recoveredTask = await originalFetch(baseUrl + `/api/agent/tasks/${recoveryId}`, { headers: { cookie: first.cookie } });
-        const recoveredBody = await recoveredTask.json();
-        assert.equal(recoveredBody.task.status, "paused");
-        assert.ok(recoveredBody.events.some(event => event.event_type === "task.recovered_paused"));
+        await pool.query("UPDATE agent_tasks SET status='running',approved_at=now(),lease_owner='crashed-worker',lease_token=$1,lease_expires_at=now()-interval '1 second',worker_attempts=1 WHERE id=$2 AND user_id=$3", [randomUUID(), recoveryId, first.user.id]);
+        const recoveredBody = await waitForAgentTask(recoveryId, "completed");
+        assert.equal(recoveredBody.task.worker_attempts, 2, "an expired worker lease must be reclaimed as a bounded retry");
+        assert.ok(recoveredBody.events.some(event => event.event_type === "tool.executed"), "reclaimed work must continue from the persisted cursor");
 
         const rejectedCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",
@@ -452,6 +455,7 @@ if (!process.env.DATABASE_URL) {
       assert.equal(afterLogout.status, 401);
     } finally {
       await pool.query("DELETE FROM users WHERE id = ANY($1::uuid[])", [[first.user.id, second.user.id]]);
+      await worker.stop();
       await new Promise(resolve => server.close(resolve));
       await pool.end();
     }
