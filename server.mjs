@@ -60,6 +60,10 @@ const chatLimiter = rateLimit({
   windowMs: 60_000, limit: 10, standardHeaders: "draft-8",
   legacyHeaders: false, message: { error: "Too many requests. Try again in a minute." }
 });
+const agentLimiter = rateLimit({
+  windowMs: 60_000, limit: 20, standardHeaders: "draft-8",
+  legacyHeaders: false, message: { error: "Too many agent requests. Try again in a minute." }
+});
 
 function noStore(_req, res, next) {
   res.set("Cache-Control", "no-store");
@@ -642,7 +646,7 @@ app.delete("/api/memory/:id", noStore, sameOriginOnly, dbRequired, requireAuth, 
 });
 
 
-app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, chatLimiter, async (req, res) => {
+app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, agentLimiter, async (req, res) => {
   const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
   const titleInput = typeof req.body?.title === "string" ? req.body.title.trim() : "";
   if (!prompt || prompt.length > 8000 || titleInput.length > 120) {
@@ -667,7 +671,7 @@ app.post("/api/agent/tasks", noStore, sameOriginOnly, dbRequired, requireAuth, r
   }
 });
 
-app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, chatLimiter, async (req, res) => {
+app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, agentLimiter, async (req, res) => {
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   const started = await pool.query(
     "UPDATE agent_tasks SET status='planning',updated_at=now() WHERE id=$1 AND user_id=$2 AND status='queued' RETURNING id,title,prompt",
