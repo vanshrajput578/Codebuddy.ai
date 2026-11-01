@@ -414,7 +414,7 @@ if (!process.env.DATABASE_URL) {
 
         const crashTask = await pool.query("INSERT INTO agent_tasks (user_id,title,prompt,status,approved_at,plan,current_step) VALUES ($1,'Process crash recovery','Hard termination test','running',now(),$2::jsonb,0) RETURNING id", [first.user.id, JSON.stringify({ steps: [] })]);
         const child = spawn(process.execPath, ["tests/fixtures/worker-hold.mjs"], {
-          cwd: process.cwd(), env: process.env, stdio: "ignore"
+          cwd: process.cwd(), env: process.env, stdio: "inherit"
         });
         let childClaimed = false;
         for (let attempt = 0; attempt < 100; attempt += 1) {
