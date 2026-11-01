@@ -239,24 +239,109 @@ app.post("/api/auth/logout", noStore, sameOriginOnly, dbRequired, requireAuth, r
   }
 });
 
+app.get("/api/conversations", noStore, dbRequired, requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id,title,created_at,updated_at FROM conversations WHERE user_id=$1 ORDER BY updated_at DESC LIMIT 40",
+      [req.auth.id]
+    );
+    return res.json({ conversations: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load conversations." });
+  }
+});
+
+app.get("/api/conversations/:id/messages", noStore, dbRequired, requireAuth, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: "Invalid conversation ID." });
+  try {
+    const owned = await pool.query(
+      "SELECT id FROM conversations WHERE id=$1 AND user_id=$2",
+      [req.params.id, req.auth.id]
+    );
+    if (!owned.rowCount) return res.status(404).json({ error: "Conversation not found." });
+    const result = await pool.query(
+      "SELECT id,role,content,created_at FROM messages WHERE conversation_id=$1 ORDER BY created_at ASC LIMIT 200",
+      [req.params.id]
+    );
+    return res.json({ messages: result.rows });
+  } catch {
+    return res.status(503).json({ error: "Could not load conversation messages." });
+  }
+});
+
+app.delete("/api/conversations/:id", noStore, sameOriginOnly, dbRequired, requireAuth, requireCsrf, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: "Invalid conversation ID." });
+  try {
+    const result = await pool.query(
+      "DELETE FROM conversations WHERE id=$1 AND user_id=$2 RETURNING id",
+      [req.params.id, req.auth.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Conversation not found." });
+    return res.json({ ok: true });
+  } catch {
+    return res.status(503).json({ error: "Could not delete conversation." });
+  }
+});
+
 app.post("/api/chat", noStore, sameOriginOnly, dbRequired, chatLimiter, requireAuth, requireCsrf, async (req, res) => {
   const message = req.body?.message;
+  const requestedConversationId = req.body?.conversationId || null;
   if (typeof message !== "string" || !message.trim() || message.length > 8000) {
     return res.status(400).json({ error: "Message must be between 1 and 8000 characters." });
+  }
+  if (requestedConversationId && !/^[0-9a-f-]{36}$/i.test(requestedConversationId)) {
+    return res.status(400).json({ error: "Invalid conversation ID." });
   }
   if (!process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: "AI provider is not configured on the server." });
   }
   try {
+    if (requestedConversationId) {
+      const owned = await pool.query(
+        "SELECT id FROM conversations WHERE id=$1 AND user_id=$2",
+        [requestedConversationId, req.auth.id]
+      );
+      if (!owned.rowCount) return res.status(404).json({ error: "Conversation not found." });
+    }
+
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const result = await ai.models.generateContent({ model, contents: message.trim() });
     const answer = result.text;
     if (typeof answer !== "string" || !answer.trim()) {
       return res.status(502).json({ error: "The AI provider returned an empty response." });
     }
-    return res.json({ answer });
+
+    const client = await pool.connect();
+    let conversationId = requestedConversationId;
+    try {
+      await client.query("BEGIN");
+      if (!conversationId) {
+        const title = message.trim().replace(/\s+/g, " ").slice(0, 80);
+        const created = await client.query(
+          "INSERT INTO conversations (user_id,title) VALUES ($1,$2) RETURNING id",
+          [req.auth.id, title || "New conversation"]
+        );
+        conversationId = created.rows[0].id;
+      } else {
+        await client.query(
+          "UPDATE conversations SET updated_at=now() WHERE id=$1 AND user_id=$2",
+          [conversationId, req.auth.id]
+        );
+      }
+      await client.query(
+        "INSERT INTO messages (conversation_id,role,content) VALUES ($1,'user',$2),($1,'assistant',$3)",
+        [conversationId, message.trim(), answer.trim()]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+    return res.json({ answer: answer.trim(), conversationId });
   } catch {
-    return res.status(502).json({ error: "AI request failed. Check the server configuration and provider status." });
+    return res.status(503).json({ error: "AI request or conversation save failed. Retry shortly." });
   }
 });
 
