@@ -36,7 +36,7 @@ The first computer-tools increment adds a dedicated Playwright worker in `comput
 - Navigation is capped at 12 seconds, 40 browser requests and 12,000 characters of extracted text. Each user is limited to six jobs per minute, and the worker runs one job at a time.
 - `computer/Dockerfile` runs as an unprivileged user. Deploy with a read-only root filesystem, bounded tmpfs, memory/CPU/PID limits, no-new-privileges, no host mounts and no application/provider secrets in the container.
 
-Build with `docker build -f computer/Dockerfile -t nexus-browser-worker .`. Start it only on a private container network and set `BROWSER_WORKER_TOKEN` and `BROWSER_EGRESS_PROXY`. Do not publish port 4002 to the public internet. This infrastructure increment is not yet wired into the agent planner; the next increment adds the approval-gated `browser.open` tool and runs it outside database transactions.
+Build with `docker build -f computer/Dockerfile -t nexus-browser-worker .`. Start it only on a private container network and set `BROWSER_WORKER_TOKEN` and `BROWSER_EGRESS_PROXY`. Do not publish port 4002 to the public internet. The allowlisted `browser.open` tool is approval-required. The plan validator requires `replanAfter=true` so extracted page evidence is passed to a continuation planner that treats all tool output as untrusted data. The durable task runner releases its PostgreSQL transaction before contacting the browser service, then reacquires the task row and verifies the lease token, lease expiry, approval state, task status and cursor before persisting the result.
 
 ## Remaining production requirements
 
