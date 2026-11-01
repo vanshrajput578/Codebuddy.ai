@@ -94,7 +94,7 @@ A passing CI run is evidence for the tests it executes, not proof that unimpleme
 
 ## Current truth
 
-The repository currently has a responsive same-origin web client, account/session APIs, PostgreSQL-backed conversations, per-user encrypted provider credentials and server-side Gemini/OpenAI/OpenRouter/Anthropic adapters. Chat history is passed to the selected adapter as bounded context. Provider credentials are encrypted using AES-256-GCM with authenticated data bound to the user and provider.
+The repository currently has a same-origin web client, account/session APIs, PostgreSQL-backed conversations, per-user encrypted provider credentials, server-side Gemini/OpenAI/OpenRouter/Anthropic adapters, user-scoped memory CRUD and a durable task queue/event/cancellation foundation. Chat history is passed to the selected adapter as bounded context. Provider credentials are encrypted using AES-256-GCM with authenticated data bound to the user and provider.
 
 GitHub Actions provisions PostgreSQL 16 and runs:
 - JavaScript syntax checks for server, frontend and test files.
@@ -102,4 +102,4 @@ GitHub Actions provisions PostgreSQL 16 and runs:
 - Security regression checks for origin enforcement, fail-closed behaviour and frontend delivery.
 - Gitleaks secret scanning.
 
-Latest verified code commit: `82620e0` (durable task/memory APIs and their PostgreSQL integration tests, plus tenant-bound provider encryption). The backend test workflow passed 8 tests with 0 failures; the secret scan passed. Later commits in the branch are documentation-only. Real provider credentials and endpoints have not been tested. Phase 3 streaming/capability registry remains incomplete. Phase 4 is a backend foundation only; planner/executor, approval flow and task UI remain incomplete. Phases 5–7 are not implemented. Phase 8 is only a partial security baseline; production deployment, backups, monitoring, quotas and independent review remain outstanding.
+Latest verified code commit: `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`. The backend workflow passed on commit `456bb2b373e6e5940a6b3cad6ec78f67a75ac2e7`: 8 top-level Node tests, 0 failures, 0 skipped. The PostgreSQL integration test provisions a real PostgreSQL 16 CI service and exercises account/session, provider vault encryption/tamper detection, mocked OpenAI connection/chat, history context, per-user memory CRUD/isolation, durable task creation/events/cancellation and cross-user access controls. The secret scan also passed. Later commits in the branch are documentation-only. Real provider credentials and endpoints have not been tested. Phase 3 streaming/capability registry remains incomplete. Phase 4 is a backend foundation only; planner/executor, tool permission validation, approval/pause/resume flow and task UI remain incomplete. Phases 5–7 are not implemented. Phase 8 is only a partial security baseline; production deployment, backups, monitoring, quotas and independent review remain outstanding.
