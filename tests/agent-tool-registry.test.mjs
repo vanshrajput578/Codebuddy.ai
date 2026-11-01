@@ -7,7 +7,7 @@ import {
 
 test("registry exposes only explicitly registered tools", () => {
   assert.deepEqual(getAgentToolNames(), [
-    "memory.search", "memory.save", "math.calculate", "time.now", "browser.open", "terminal.run", "response.compose"
+    "memory.search", "memory.save", "math.calculate", "time.now", "browser.open", "terminal.run", "agent.delegate", "response.compose"
   ]);
   assert.match(getAgentToolPrompt(), /math.calculate/);
   assert.throws(() => isAgentToolApprovalRequired("shell.exec"), /Unsupported/);
@@ -20,11 +20,14 @@ test("memory writes require approval while read-only tools do not", () => {
   assert.equal(isAgentToolApprovalRequired("time.now"), false);
   assert.equal(isAgentToolApprovalRequired("browser.open"), true);
   assert.equal(isAgentToolApprovalRequired("terminal.run"), true);
+  assert.equal(isAgentToolApprovalRequired("agent.delegate"), true);
 });
 
 test("tool inputs are normalized and bounded", () => {
   assert.deepEqual(validateAgentToolInput("math.calculate", { expression: " 2 + 3 " }), { expression: "2 + 3" });
   assert.deepEqual(validateAgentToolInput("time.now", {}), { timezone: "Asia/Kolkata" });
+  assert.deepEqual(validateAgentToolInput("agent.delegate", { profile: "researcher", objective: "Compare two candidate designs" }), { profile: "researcher", objective: "Compare two candidate designs" });
+  assert.throws(() => validateAgentToolInput("agent.delegate", { profile: "admin", objective: "Do anything" }), /Delegation profile/);
   assert.deepEqual(validateAgentToolInput("browser.open", { url: "https://example.com/path" }), { url: "https://example.com/path" });
   assert.throws(() => validateAgentToolInput("browser.open", { url: "http://127.0.0.1/" }), /Private/);
   assert.deepEqual(validateAgentToolInput("terminal.run", { command: "pwd", files: [] }), {
