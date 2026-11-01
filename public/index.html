@@ -14,7 +14,7 @@
 <nav class="nav">
 <button class="nav-item active" data-view="chat"><span>◈</span> AI Workspace</button>
 <button class="nav-item" data-view="agents"><span>⌘</span> Agents <em>Planned</em></button>
-<button class="nav-item" data-view="tasks"><span>◷</span> Tasks <em>Planned</em></button>
+<button class="nav-item" data-view="tasks"><span>◷</span> Agent Tasks</button>
 <button class="nav-item" data-view="files"><span>▤</span> Files <em>Planned</em></button>
 <button class="nav-item" data-view="memory"><span>◎</span> Memory <em>Planned</em></button>
 <button class="nav-item" data-view="settings"><span>⚙</span> AI Providers</button>
@@ -62,4 +62,19 @@
 </form>
 <div class="provider-list"><h2>Configured providers</h2><div id="providerList">Sign in to load provider settings.</div></div>
 </section>
-</main></div><script src="./app.js"></script></body></html>
+<section class="content secondary-view hidden" id="tasksView">
+  <div class="section-icon">⌘</div><p class="eyebrow">BOUNDED AGENT RUNTIME</p><h1>Agent Tasks</h1>
+  <p class="subheading">Create a task, review the AI-generated plan, then approve execution. Every task is private to your account.</p>
+  <div class="agent-safety"><b>Execution boundary</b><span>Only private-memory search, approved memory saving and response composition are available. No shell, browser, external actions or arbitrary code execution.</span></div>
+  <form id="agentTaskForm" class="agent-task-form">
+    <label class="auth-field">Task title <span class="muted-optional">(optional)</span><input id="agentTaskTitle" maxlength="120" placeholder="e.g. Organize my project notes"></label>
+    <label class="auth-field">What should NEXUS do?<textarea id="agentTaskPrompt" rows="4" maxlength="8000" required placeholder="Describe the task and the outcome you want..."></textarea></label>
+    <button class="auth-submit" id="createAgentTask" type="submit">Create task & generate plan</button>
+    <p class="auth-error" id="agentTaskError" role="alert"></p>
+  </form>
+  <div class="agent-workspace">
+    <div class="agent-task-list"><div class="agent-section-heading"><h2>Your tasks</h2><button class="provider-secondary" id="refreshAgentTasks" type="button">Refresh</button></div><div id="agentTaskList"><p class="provider-empty">Sign in to load tasks.</p></div></div>
+    <div class="agent-task-detail" id="agentTaskDetail"><div class="agent-empty"><span>◷</span><b>Select a task</b><small>Plans and execution events will appear here.</small></div></div>
+  </div>
+</section>
+<section class="content secondary-view hidden" id="providerSettings"></main></div><script src="./app.js"></script></body></html>
