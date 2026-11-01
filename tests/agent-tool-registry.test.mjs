@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  executeAgentTool, getAgentToolNames, getAgentToolPrompt,
+  composeAgentResult, executeAgentTool, getAgentToolNames, getAgentToolPrompt,
   isAgentToolApprovalRequired, validateAgentToolInput
 } from "../agent/tool-registry.mjs";
 
@@ -65,4 +65,24 @@ test("database tools are scoped to the supplied user", async () => {
   assert.equal(result.memories.length, 1);
   assert.equal(calls[0].values[0], "owner-id");
   assert.equal(calls[0].values[1], "%private%");
+});
+
+
+test("final answer includes bounded results from completed tools", () => {
+  const result = composeAgentResult([
+    { tool: "memory.search", status: "completed", result: { memories: [{ content: "Project note" }] } },
+    { tool: "math.calculate", status: "completed", result: { expression: "2+2", value: 4 } },
+    { tool: "response.compose", status: "completed", result: { text: "Task completed." } }
+  ]);
+  assert.match(result, /^Task completed\./);
+  assert.match(result, /memory\.search/);
+  assert.match(result, /Project note/);
+  assert.match(result, /math\.calculate/);
+  assert.match(result, /"value":4/);
+  assert.ok(result.length <= 4000);
+});
+
+test("final answer safely handles absent or malformed tool output", () => {
+  assert.equal(composeAgentResult([]), "The approved task completed.");
+  assert.ok(composeAgentResult([{ tool: "math.calculate", status: "completed", result: null }]).includes("math.calculate"));
 });
