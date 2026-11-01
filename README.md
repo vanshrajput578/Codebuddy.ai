@@ -10,7 +10,7 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 - Automated verification: syntax checks, isolated API security tests, PostgreSQL integration tests and Gitleaks secret scanning run in GitHub Actions.
 - Implemented: durable task queue, provider-assisted bounded planner, allowlisted memory/search/response tools, explicit approval gate, background execution, task history UI, pause/resume/reject/cancel controls and user-scoped memory CRUD.
 - Agent limitation: no shell, browser, arbitrary HTTP, filesystem or device-control tools; no advanced model replanning or distributed worker service.
-- Implemented on the Phase 5 branch: initial native Android client for authentication, encrypted sessions, chat/history, provider settings and agent task creation/approval/control. Android build verification is in progress; no production APK or device QA is yet verified.
+- Implemented on the Phase 5 branch: initial native Android client for authentication, encrypted sessions, chat/history, provider settings and agent task creation/approval/control. Android Gradle build passed in CI and a debug APK artifact is available from the Android workflow run; no signed release APK or device QA is yet verified.
 - Not implemented: computer-use sandbox, multi-agent delegation and scheduled automations.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
 
