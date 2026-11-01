@@ -51,12 +51,12 @@ Supported adapter IDs: `gemini`, `openai`, `openrouter`, `anthropic`. Users can 
 
 This repository is not yet production-ready for public multi-user traffic. Before launch, add email verification and account recovery, per-user quotas and abuse controls, managed KMS/envelope encryption, database migrations/backups, observability, dependency/SAST scanning, isolated workers and an independent security review. Configure `NODE_ENV=production`, exact HTTPS `APP_ORIGIN`, database TLS as required, and secrets through the hosting platform.
 
-## Isolated browser worker (Phase 6, first increment)
+## Isolated browser worker (Phase 6)
 
 The browser worker is a separate containerized Playwright service. It is read-only: page navigation and text extraction only. It does not click buttons, submit forms, download files, run shell commands or retain cookies between jobs.
 
 1. Generate a worker token with `openssl rand -hex 32`.
-2. Configure `BROWSER_WORKER_TOKEN` and `BROWSER_EGRESS_PROXY`. The proxy must enforce destination-IP ACLs after DNS resolution and block loopback, private, link-local, reserved and cloud metadata ranges. The worker intentionally refuses to start without a proxy.
+2. Configure `BROWSER_WORKER_TOKEN`, `BROWSER_EGRESS_PROXY` and `BROWSER_WORKER_URL` for the agent worker. The proxy must enforce destination-IP ACLs after DNS resolution and block loopback, private, link-local, reserved and cloud metadata ranges. The worker intentionally refuses to start without a proxy.
 3. Build the image: `docker build -f computer/Dockerfile -t nexus-browser-worker .`.
 4. Run it on a private Docker network only, with a read-only root filesystem, bounded tmpfs, memory/CPU/PID limits, no-new-privileges and no host mounts. Do not expose port 4002 publicly and do not pass database or provider secrets to this container.
 5. Keep direct container egress blocked at the network layer; allow access only to the dedicated egress proxy. The proxy must protect against DNS rebinding by checking the resolved destination IP at connection time.
@@ -76,7 +76,7 @@ docker run -d --name nexus-browser-worker \
 
 The example assumes `nexus-internal` and an egress proxy already exist. Enforce an egress firewall so the browser container can connect only to that proxy; the proxy must deny unsafe destination IPs after DNS resolution. Do not use an unrestricted forward proxy.
 
-This increment delivers the isolated browser runtime and policy layer. The `browser.open` agent tool and UI integration are the next implementation slice; they will call this service outside database transactions and require plan approval.
+The agent tool registry now exposes `browser.open`. The planner must mark it for evidence-driven replanning, and the server derives its approval requirement from the registry. The worker calls the browser service outside PostgreSQL transactions, then reacquires the task row and verifies the lease, status and cursor before saving page evidence. The Agent Tasks screen shows the approval-required step in the normal plan review flow. Configure `BROWSER_WORKER_URL` on the durable agent worker to reach the private browser service.
 
 ## Current API
 
