@@ -93,6 +93,19 @@ if (!process.env.DATABASE_URL) {
       assert.equal(listBody.providers.length, 1);
       assert.equal(JSON.stringify(listBody).includes(apiKey), false, "provider list must not expose key");
 
+      await pool.query(
+        `INSERT INTO provider_credentials (user_id,provider,model_name,ciphertext,iv,auth_tag)
+         SELECT $1,provider,model_name,ciphertext,iv,auth_tag FROM provider_credentials WHERE user_id=$2 AND provider='openai'`,
+        [second.user.id, first.user.id]
+      );
+      const crossTenantDecrypt = await fetch(baseUrl + "/api/providers/openai/test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: second.cookie, "x-csrf-token": second.csrf },
+        body: "{}"
+      });
+      assert.equal(crossTenantDecrypt.status, 502, "encrypted key must be bound to its owning user and provider");
+      await pool.query("DELETE FROM provider_credentials WHERE user_id=$1 AND provider='openai'", [second.user.id]);
+
       const otherList = await fetch(baseUrl + "/api/providers", { headers: { cookie: second.cookie } });
       assert.equal((await otherList.json()).providers.length, 0, "provider keys must be isolated per user");
 
