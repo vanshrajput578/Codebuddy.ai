@@ -296,16 +296,26 @@ app.post("/api/chat", noStore, sameOriginOnly, dbRequired, chatLimiter, requireA
     return res.status(503).json({ error: "AI provider is not configured on the server." });
   }
   try {
+    let history = [];
     if (requestedConversationId) {
       const owned = await pool.query(
         "SELECT id FROM conversations WHERE id=$1 AND user_id=$2",
         [requestedConversationId, req.auth.id]
       );
       if (!owned.rowCount) return res.status(404).json({ error: "Conversation not found." });
+      const prior = await pool.query(
+        "SELECT role,content FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12",
+        [requestedConversationId]
+      );
+      history = prior.rows.reverse().map(item => ({
+        role: item.role === "assistant" ? "model" : "user",
+        parts: [{ text: item.content.slice(0, 6000) }]
+      }));
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const result = await ai.models.generateContent({ model, contents: message.trim() });
+    const contents = [...history, { role: "user", parts: [{ text: message.trim() }] }];
+    const result = await ai.models.generateContent({ model, contents });
     const answer = result.text;
     if (typeof answer !== "string" || !answer.trim()) {
       return res.status(502).json({ error: "The AI provider returned an empty response." });
