@@ -8,7 +8,8 @@ NEXUS AI currently provides a same-origin web client, Node.js/Express API, Postg
 
 - Implemented in code: registration/login, scrypt password hashing, opaque session cookies, CSRF checks, user-owned conversations, encrypted provider-key storage, provider selection and four provider adapters (Gemini, OpenAI, OpenRouter, Anthropic).
 - Automated verification: syntax checks, isolated API security tests, PostgreSQL integration tests and Gitleaks secret scanning run in GitHub Actions.
-- Partially implemented: durable task queue/event records and user-controlled memory CRUD APIs. No agent planner/executor or task UI exists yet.\n- Not implemented: Android client, computer-use sandbox, multi-agent delegation and scheduled automations.
+- Partially implemented: durable task queue/event records and user-controlled memory CRUD APIs. No agent planner/executor or task UI exists yet.
+- Not implemented: Android client, computer-use sandbox, multi-agent delegation and scheduled automations.
 - Not certified: production deployment, live third-party provider credentials, billing/quota enforcement or independent security review.
 
 ## Local setup
@@ -54,7 +55,9 @@ This repository is not yet production-ready for public multi-user traffic. Befor
 - `GET /api/providers`, `PUT /api/providers/:provider`, `DELETE /api/providers/:provider`.
 - `PUT /api/provider-selection`.
 - `POST /api/providers/:provider/test`.
-- `GET/POST /api/memory`, `PUT/DELETE /api/memory/:id`: user-scoped persistent memory CRUD.\n- `GET/POST /api/agent/tasks`, `GET /api/agent/tasks/:id`, `POST /api/agent/tasks/:id/cancel`: durable task queue and event history (no worker execution yet).\n- `POST /api/chat`: calls the selected provider and persists the conversation.
+- `GET/POST /api/memory`, `PUT/DELETE /api/memory/:id`: user-scoped persistent memory CRUD.
+- `GET/POST /api/agent/tasks`, `GET /api/agent/tasks/:id`, `POST /api/agent/tasks/:id/cancel`: durable task queue and event history (no worker execution yet).
+- `POST /api/chat`: calls the selected provider and persists the conversation.
 
 See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPLEMENTATION.md), [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
 
