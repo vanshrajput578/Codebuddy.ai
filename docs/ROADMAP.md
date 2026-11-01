@@ -41,11 +41,11 @@ Acceptance: configured provider returns a real streamed response. Current: crede
 
 ## Phase 4 — Agent runtime and memory
 - [x] Add PostgreSQL-backed durable task records, execution cursor and event history.
-- [x] Provider-assisted planning with strict JSON validation and a five-step execution bound.
-- [x] Allowlisted memory search/save and response composition tools with server-side input validation.
+- [x] Provider-assisted planning with strict JSON validation and a eight-step execution bound and central tool registry.
+- [x] Central allowlisted tool registry with memory search/save, safe arithmetic and timezone-aware clock tools, plus server-side input validation.
 - [x] Explicit plan approval/rejection, pause/resume/cancel transitions and restart recovery.
 - [x] Add user-scoped persistent memory CRUD API.
-Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, tool allowlist, memory-write approval gate, task UI, lifecycle controls and restart-to-paused recovery are implemented; external tools and advanced replanning remain out of scope.
+Acceptance: tasks survive restart and restricted tools require approval. Current: bounded planner/executor, central tool registry, safe math/time tools, memory-write approval gate, task UI, lifecycle controls and restart-to-paused recovery are implemented; external tools and advanced replanning remain out of scope.
 
 ## Phase 5 — Android
 - [ ] Expo app and shared API client.
@@ -111,3 +111,14 @@ GitHub Actions provisions PostgreSQL 16 and runs:
 - Gitleaks secret scanning.
 
 Latest backend-verified code commit: `fe56c99f82efb09420f5d7f2e00a1b87beb50245`. Its GitHub Actions backend workflow passed 8 top-level tests with 0 failures and 0 skipped; the PostgreSQL integration suite exercised the Phase 4 agent flows. The secret scan passed. Later commits updated documentation only. Real third-party provider credentials/endpoints, browser/device visual QA and production deployment have not been tested. Phase 3 streaming/capability registry remains incomplete. Phases 5–7 are not implemented. Phase 8 remains a partial security baseline; deployment, backups, monitoring, quotas and independent security review are outstanding.
+
+
+## Core Agent increment (2026-11-01)
+
+- [x] Centralize tool definitions, input validation and approval metadata in `agent/tool-registry.mjs`.
+- [x] Add a bounded arithmetic calculator that does not use `eval` or execute code.
+- [x] Add a timezone-aware current-time tool (defaults to Asia/Kolkata).
+- [x] Increase the maximum validated plan length from five to eight steps with an additive database migration.
+- [x] Add unit tests for tool allowlisting, validation, approval metadata, arithmetic safety and time output.
+- [ ] Move execution into a separately supervised durable worker (next reliability increment).
+- [ ] Add dynamic replanning and final-answer synthesis from actual tool outputs.
