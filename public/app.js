@@ -390,9 +390,16 @@ function showView(view){
   document.querySelectorAll('.nav-item').forEach(item=>item.classList.toggle('active',item.dataset.view===view));
   pageName.textContent=labels[view]||labels.chat;
   chatView.classList.toggle('hidden',view!=='chat');
-  infoView.classList.toggle('hidden',view==='chat'||view==='settings');
+  infoView.classList.toggle('hidden',view==='chat'||view==='settings'||view==='tasks');
   providerSettings.classList.toggle('hidden',view!=='settings'||!currentUser);
-  if(view==='tasks'&&!currentUser){\n    infoView.classList.remove('hidden');\n    document.getElementById('infoTitle').textContent='Sign in required';\n    document.getElementById('infoText').textContent='Sign in to create and manage your private agent tasks.';\n  }\n  if(view==='tasks'&&currentUser)loadAgentTasks();\n  if(view==='settings'&&!currentUser){
+  tasksView.classList.toggle('hidden',view!=='tasks'||!currentUser);
+  if(view==='tasks'&&!currentUser){
+    infoView.classList.remove('hidden');
+    document.getElementById('infoTitle').textContent='Sign in required';
+    document.getElementById('infoText').textContent='Sign in to create and manage your private agent tasks.';
+  }
+  if(view==='tasks'&&currentUser)loadAgentTasks();
+  if(view==='settings'&&!currentUser){
     infoView.classList.remove('hidden');
     document.getElementById('infoTitle').textContent='Sign in required';
     document.getElementById('infoText').textContent='Sign in to manage your private AI provider credentials.';
