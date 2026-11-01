@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, randomUUID } from "node:crypto";
+import { validateWorkspacePath } from "./terminal-sandbox-runner.mjs";
 
 const MAX_BODY_BYTES = 1_500_000;
 const MAX_COMMAND_CHARS = 4_000;
@@ -80,8 +81,9 @@ async function readJson(request) {
 export function runTerminalSandbox(job, options = {}) {
   const dockerBin = options.dockerBin || process.env.SANDBOX_DOCKER_BIN || "docker";
   const image = options.image || process.env.TERMINAL_SANDBOX_IMAGE || "nexus-terminal-sandbox:latest";
+  const containerName = "nexus-terminal-" + randomUUID();
   const args = [
-    "run", "--rm", "--init",
+    "run", "--rm", "--init", "--name", containerName,
     "--network", "none",
     "--read-only",
     "--user", "10001:10001",
@@ -110,7 +112,9 @@ export function runTerminalSandbox(job, options = {}) {
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
     let outputOverflow = false;
+    let timedOut = false;
     const outerTimeout = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGKILL");
     }, MAX_WALL_TIME_MS);
     child.stdout.on("data", chunk => {
@@ -128,17 +132,50 @@ export function runTerminalSandbox(job, options = {}) {
       clearTimeout(outerTimeout);
       reject(new Error(error?.code === "ENOENT" ? "Docker CLI is not installed on the terminal worker." : "Terminal sandbox could not be started."));
     });
-    child.once("close", code => {
+    child.once("close", async code => {
       clearTimeout(outerTimeout);
+      // A named container lets the controller remove a job even after the Docker CLI is killed.
+      await new Promise(done => {
+        const cleanup = spawn(dockerBin, ["rm", "-f", containerName], {
+          env: {
+            PATH: process.env.PATH || "/usr/bin:/bin",
+            ...(process.env.DOCKER_HOST ? { DOCKER_HOST: process.env.DOCKER_HOST } : {}),
+            ...(process.env.DOCKER_CONTEXT ? { DOCKER_CONTEXT: process.env.DOCKER_CONTEXT } : {})
+          },
+          stdio: "ignore",
+          windowsHide: true
+        });
+        const finish = () => { clearTimeout(cleanupTimer); done(); };
+        const cleanupTimer = setTimeout(() => { cleanup.kill("SIGKILL"); finish(); }, 3_000);
+        cleanup.once("error", finish);
+        cleanup.once("close", finish);
+      });
+      if (timedOut) return reject(new Error("Terminal sandbox exceeded its hard wall-clock limit."));
       if (outputOverflow) return reject(new Error("Terminal sandbox output exceeded the worker limit."));
       if (code !== 0) return reject(new Error(stderr.toString("utf8").slice(0, 500) || "Terminal sandbox process failed."));
       try {
         const result = JSON.parse(stdout.toString("utf8"));
         if (!result || !Number.isInteger(result.exitCode) || typeof result.stdout !== "string" ||
-            typeof result.stderr !== "string" || !Array.isArray(result.files) ||
-            result.files.length > 50 || result.files.some(file =>
-              !file || typeof file.path !== "string" || typeof file.contentBase64 !== "string"
-            )) throw new Error("Invalid sandbox output.");
+            typeof result.stderr !== "string" || !Array.isArray(result.files) || result.files.length > 50 ||
+            result.files.some(file => !file || typeof file.path !== "string" || typeof file.contentBase64 !== "string")) {
+          throw new Error("Invalid sandbox output.");
+        }
+        const seen = new Set();
+        let exportedBytes = 0;
+        for (const file of result.files) {
+          const safePath = validateWorkspacePath(file.path);
+          if (seen.has(safePath)) throw new Error("Duplicate exported path.");
+          seen.add(safePath);
+          const bytes = Buffer.from(file.contentBase64, "base64");
+          if (bytes.toString("base64") !== file.contentBase64 || bytes.length > MAX_FILE_BYTES) throw new Error("Invalid exported file.");
+          exportedBytes += bytes.length;
+          if (exportedBytes > MAX_TOTAL_FILE_BYTES) throw new Error("Exported workspace exceeds its quota.");
+        }
+        result.files = result.files.map(file => ({ path: validateWorkspacePath(file.path), contentBase64: file.contentBase64 }));
+        result.stdout = result.stdout.slice(0, 32 * 1024);
+        result.stderr = result.stderr.slice(0, 32 * 1024);
+        result.warnings = Array.isArray(result.warnings) ? result.warnings.slice(0, 30).map(item => String(item).slice(0, 240)) : [];
+        result.totalBytes = exportedBytes;
         resolve(result);
       } catch {
         reject(new Error("Terminal sandbox returned an invalid result."));
