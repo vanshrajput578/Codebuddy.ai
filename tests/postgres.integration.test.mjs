@@ -292,16 +292,18 @@ if (!process.env.DATABASE_URL) {
         });
         assert.equal(agentApprove.status, 202);
         async function waitForAgentTask(id, expectedStatus) {
+          let lastStatus = "missing";
           for (let attempt = 0; attempt < 100; attempt += 1) {
-            const response = await originalFetch(baseUrl + `/api/agent/tasks/${id}`, { headers: { cookie: first.cookie } });
+            const response = await originalFetch(baseUrl + "/api/agent/tasks/" + id, { headers: { cookie: first.cookie } });
             const body = await response.json();
-            if (body.task?.status === expectedStatus) return body;
-            if (["failed", "cancelled"].includes(body.task?.status) && body.task.status !== expectedStatus) {
-              assert.fail(`Task entered unexpected terminal state: ${body.task.status}`);
+            lastStatus = body.task?.status || "missing";
+            if (lastStatus === expectedStatus) return body;
+            if (["failed", "cancelled"].includes(lastStatus) && lastStatus !== expectedStatus) {
+              assert.fail("Task entered unexpected terminal state: " + lastStatus + " result=" + String(body.task?.result || ""));
             }
             await new Promise(resolve => setTimeout(resolve, 20));
           }
-          assert.fail(`Task did not reach ${expectedStatus} in time`);
+          assert.fail("Task did not reach " + expectedStatus + " in time; last status=" + lastStatus);
         }
         const replannedAgent = await waitForAgentTask(agentTaskId, "awaiting_approval");
         assert.equal(replannedAgent.task.current_step, 1, "the first approved search step must remain completed");
