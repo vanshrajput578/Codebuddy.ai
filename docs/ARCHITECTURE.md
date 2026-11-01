@@ -50,6 +50,19 @@ Adapters declare streaming, tool calling, vision, structured output and context 
 ## Sandbox boundary
 Browser and terminal execution must not run in the API process. Use isolated containers or a trusted remote sandbox with CPU, memory, time, filesystem and network limits. Never mount host secrets into user task containers.
 
+## Phase 6 browser worker
+
+The browser runtime is a separate Playwright service, not an API route or part of the durable task worker. The initial browser capability is read-only page loading and text extraction; it does not click, submit forms, download files, execute shell commands or retain browser state.
+
+The worker requires:
+- A 32-byte-or-longer internal bearer token shared only with the agent worker.
+- A dedicated egress proxy that denies loopback, private, link-local, reserved and cloud-metadata destinations after DNS resolution. Direct egress from the browser container must be blocked at the network layer.
+- A non-root container with the Chromium sandbox enabled, CPU/memory/PID limits, read-only root filesystem, bounded writable temporary storage and no host or application-secret mounts.
+
+The service rechecks each HTTP(S) request and redirect, permits GET/HEAD only, blocks WebSockets and downloads, uses a fresh browser context per job and applies per-user request quotas. The application DNS check is defense in depth; it does not replace the egress proxy's DNS-rebinding and destination-IP enforcement.
+
+The browser worker is not yet exposed as an agent tool in this first infrastructure increment. Agent integration will execute it outside PostgreSQL row-lock transactions and require explicit approval for outbound browsing.
+
 ## Free-tier mode
 Support chat-only operation without workers or sandbox infrastructure. Free tiers can sleep, throttle or reject long-running workloads; do not promise permanent 24/7 execution.
 
