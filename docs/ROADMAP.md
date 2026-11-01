@@ -126,6 +126,18 @@ Latest verified branch head: `b351da1ec84e03455a1b5bcca900e1a7a9d912d8`. Backend
 - [x] Add evidence-driven dynamic replanning with bounded continuation plans and renewed approval for newly proposed writes.
 
 
+## Phase 2 — Background Worker + Durable Task Recovery (project execution roadmap)
+
+- [x] Add PostgreSQL lease fields, worker-attempt bounds and a partial claim index.
+- [x] Add atomic task claiming with `FOR UPDATE SKIP LOCKED`.
+- [x] Add UUID lease fencing tokens and renewable worker heartbeats.
+- [x] Move approval/resume execution out of the API process; expose a separate `npm run worker` process.
+- [x] Add bounded crash-reclaim attempts and terminal handling when leases repeatedly expire.
+- [x] Make the worker resume from the persisted task cursor and keep tool execution inside the existing task transaction.
+- [ ] Verify concurrent worker claims, lease fencing under forced worker termination, heartbeat renewal under long-running work, and full PostgreSQL integration CI.
+- [ ] Add operational worker health/metrics and deployment process supervision.
+Acceptance: API and worker run separately; multiple workers cannot claim the same live lease; expired leases are safely reclaimed; interrupted work resumes from persisted progress without duplicate committed tool steps.
+
 ## Core Agent Phase 1 — closure record (2026-11-01)
 
 **Status: 100% of the agreed Core Agent Phase 1 scope implemented and CI-verified.** This is the project execution roadmap milestone, not the repository's separately numbered Phase 1 — Web foundation.
