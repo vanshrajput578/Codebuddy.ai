@@ -616,6 +616,63 @@ async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => fals
           return;
         }
         const step = plan.steps[stepIndex];
+        if (step.tool === "browser.open") {
+          // Network navigation must never hold a PostgreSQL transaction or task row lock.
+          await client.query("COMMIT");
+          client.release();
+          clientReleased = true;
+
+          const result = await runRegisteredAgentTool(null, userId, step.tool, step.input);
+          if (isLeaseLost()) return;
+
+          const persist = await pool.connect();
+          try {
+            await persist.query("BEGIN");
+            const current = await persist.query(
+              "SELECT status,plan,current_step,approved_at,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+              [taskId, userId]
+            );
+            if (!current.rowCount || current.rows[0].status !== "running" ||
+                current.rows[0].lease_token !== leaseToken ||
+                new Date(current.rows[0].lease_expires_at).getTime() <= Date.now() ||
+                Number(current.rows[0].current_step) !== stepIndex || !current.rows[0].approved_at || isLeaseLost()) {
+              await persist.query("COMMIT");
+              return;
+            }
+            const currentPlan = safeAgentPlan(current.rows[0].plan);
+            const persistedStep = currentPlan.steps[stepIndex];
+            if (!persistedStep || persistedStep.id !== step.id || persistedStep.tool !== "browser.open") {
+              await persist.query("ROLLBACK");
+              return;
+            }
+            persistedStep.status = "completed";
+            persistedStep.result = result;
+            currentPlan.steps[stepIndex] = persistedStep;
+            await persist.query(
+              "UPDATE agent_tasks SET plan=$1::jsonb,current_step=$2,updated_at=now() WHERE id=$3 AND user_id=$4",
+              [JSON.stringify(currentPlan), stepIndex + 1, taskId, userId]
+            );
+            await appendTaskEvent(persist, taskId, "tool.executed", {
+              stepId: step.id, tool: step.tool, requiresApproval: true,
+              result: JSON.stringify(result).slice(0, 1200)
+            });
+            await persist.query("COMMIT");
+          } catch (error) {
+            await persist.query("ROLLBACK").catch(() => {});
+            throw error;
+          } finally {
+            persist.release();
+          }
+
+          if (step.replanAfter) {
+            if (isLeaseLost()) return;
+            const replanned = await replanAgentTask(taskId, userId, leaseToken);
+            if (replanned.status !== "running") return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 30));
+          continue;
+        }
+
         const result = await runRegisteredAgentTool(client, userId, step.tool, step.input);
         step.status = "completed";
         step.result = result;
