@@ -68,9 +68,8 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title VARCHAR(120) NOT NULL,
-  agent_profile VARCHAR(32) NOT NULL DEFAULT 'general' CHECK (agent_profile IN ('general','researcher','developer','reviewer')),
-  allowed_tools JSONB NOT NULL DEFAULT '["memory.search","memory.save","math.calculate","time.now","browser.open","terminal.run","response.compose"]'::jsonb
-    CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 7),
+  agent_profile VARCHAR(32) NOT NULL DEFAULT 'general',
+  allowed_tools JSONB NOT NULL DEFAULT '["memory.search","memory.save","math.calculate","time.now","browser.open","terminal.run","response.compose"]'::jsonb,
   prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 8000),
   status VARCHAR(24) NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued','planning','awaiting_approval','running','paused','completed','failed','cancelled')),
@@ -85,7 +84,10 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   worker_attempts INTEGER NOT NULL DEFAULT 0 CONSTRAINT agent_tasks_worker_attempts_range CHECK (worker_attempts BETWEEN 0 AND 3),
   worker_last_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT agent_tasks_profile_check CHECK (agent_profile IN ('general','researcher','developer','reviewer')),
+  CONSTRAINT agent_tasks_allowed_tools_check
+    CHECK (jsonb_typeof(allowed_tools)='array' AND jsonb_array_length(allowed_tools) BETWEEN 1 AND 7)
 );
 CREATE INDEX IF NOT EXISTS agent_tasks_user_updated_idx ON agent_tasks(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS agent_tasks_worker_claim_idx ON agent_tasks(status, lease_expires_at, updated_at) WHERE status='running';
