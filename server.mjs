@@ -8,11 +8,13 @@ import {
   createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual
 } from "node:crypto";
 import { promisify } from "node:util";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import path from "node:path";
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
 const app = express();
+const appDirectory = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 4000);
 const appOrigin = process.env.APP_ORIGIN;
 const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
@@ -257,6 +259,8 @@ app.post("/api/chat", noStore, sameOriginOnly, dbRequired, chatLimiter, requireA
     return res.status(502).json({ error: "AI request failed. Check the server configuration and provider status." });
   }
 });
+
+app.use(express.static(path.join(appDirectory, "public"), { dotfiles: "deny", index: "index.html" }));
 
 app.use((err, _req, res, _next) => {
   if (err?.type === "entity.too.large") return res.status(413).json({ error: "Request body is too large." });
