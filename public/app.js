@@ -330,7 +330,8 @@ agentTaskForm.addEventListener('submit',async event=>{
   finally{button.disabled=false;loadAgentTasks();}
 });
 document.getElementById('refreshAgentTasks').addEventListener('click',loadAgentTasks);
-\nasync function sendMessage(text){
+
+async function sendMessage(text){
   const value=String(text||'').trim();
   if(!value||sending)return;
   addMessage(value,'user');
