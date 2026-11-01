@@ -34,10 +34,10 @@ test("Gemini, OpenRouter and Anthropic stream adapters use their provider protoc
     calls.push({ url: String(url), headers: options.headers, body: JSON.parse(options.body) });
     const provider = String(url).includes("generativelanguage") ? "gemini" : String(url).includes("openrouter") ? "openrouter" : "anthropic";
     const payload = provider === "gemini"
-      ? 'data: {"candidates":[{"content":{"parts":[{"text":"Gemini"}]}}]}\\n\\n'
+      ? 'data: {"candidates":[{"content":{"parts":[{"text":"Gemini"}]}}]}\n\n'
       : provider === "openrouter"
-        ? 'data: {"choices":[{"delta":{"content":"Router"}}]}\\n\\ndata: [DONE]\\n\\n'
-        : 'event: content_block_delta\\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude"}}\\n\\n';
+        ? 'data: {"choices":[{"delta":{"content":"Router"}}]}\n\ndata: [DONE]\n\n'
+        : 'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude"}}\n\n';
     return new Response(payload, { status: 200, headers: { "content-type": "text/event-stream" } });
   };
   try {
@@ -60,7 +60,7 @@ test("stream adapter retries one transient provider response before streaming", 
   globalThis.fetch = async () => {
     attempts += 1;
     if (attempts === 1) return new Response("busy", { status: 503 });
-    return new Response('data: {"choices":[{"delta":{"content":"Recovered"}}]}\\n\\ndata: [DONE]\\n\\n', { status: 200, headers: { "content-type": "text/event-stream" } });
+    return new Response('data: {"choices":[{"delta":{"content":"Recovered"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { "content-type": "text/event-stream" } });
   };
   try {
     const chunks = [];
