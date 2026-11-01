@@ -245,7 +245,8 @@ async function callProvider(provider, key, modelName, prompt, history = []) {
   }
   throw new Error("Unsupported provider.");
 }
-\nasync function rotateCsrf(req) {
+
+async function rotateCsrf(req) {
   const token = randomBytes(32).toString("base64url");
   await pool.query("UPDATE sessions SET csrf_hash=$1 WHERE id=$2", [digest(token), req.auth.session_id]);
   return token;
