@@ -10,6 +10,7 @@ import {
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import { executeAgentTool as runRegisteredAgentTool, getAgentToolPrompt, getAgentToolNames, isAgentToolApprovalRequired, validateAgentToolInput } from "./agent/tool-registry.mjs";
 
 const { Pool } = pg;
 const scrypt = promisify(scryptCallback);
@@ -426,9 +427,8 @@ app.post("/api/providers/:provider/test", noStore, sameOriginOnly, dbRequired, r
 
 
 const memoryCategories = new Set(["note", "preference", "project", "personal"]);
-const maxAgentSteps = 5;
+const maxAgentSteps = 8;
 const activeAgentTasks = new Set();
-const agentToolNames = new Set(["memory.search", "memory.save", "response.compose"]);
 
 function validUuid(value) {
   return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
@@ -438,33 +438,20 @@ function parseAgentPlan(raw) {
   let parsed;
   try { parsed = JSON.parse(cleaned); } catch { throw new Error("Planner returned invalid JSON."); }
   if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length < 1 || parsed.steps.length > maxAgentSteps) {
-    throw new Error("Plan must contain between 1 and 5 steps.");
+    throw new Error(`Plan must contain between 1 and ${maxAgentSteps} steps.`);
   }
+  const allowedTools = new Set(getAgentToolNames());
   const steps = parsed.steps.map((step, index) => {
-    if (!step || typeof step !== "object" || !agentToolNames.has(step.tool)) throw new Error("Plan contains an unsupported tool.");
+    if (!step || typeof step !== "object" || !allowedTools.has(step.tool)) {
+      throw new Error("Plan contains an unsupported tool.");
+    }
     const title = typeof step.title === "string" ? step.title.trim().slice(0, 100) : "";
     const description = typeof step.description === "string" ? step.description.trim().slice(0, 300) : "";
-    if (!title || !description || !step.input || typeof step.input !== "object" || Array.isArray(step.input)) {
-      throw new Error("Plan step is missing required fields.");
-    }
-    let input;
-    if (step.tool === "memory.search") {
-      const query = typeof step.input.query === "string" ? step.input.query.trim() : "";
-      if (!query || query.length > 200) throw new Error("Memory search query is invalid.");
-      input = { query };
-    } else if (step.tool === "memory.save") {
-      const category = step.input.category || "note";
-      const content = typeof step.input.content === "string" ? step.input.content.trim() : "";
-      if (!memoryCategories.has(category) || !content || content.length > 4000) throw new Error("Memory save input is invalid.");
-      input = { category, content };
-    } else {
-      const text = typeof step.input.text === "string" ? step.input.text.trim() : "";
-      if (!text || text.length > 4000) throw new Error("Response composition input is invalid.");
-      input = { text };
-    }
+    if (!title || !description) throw new Error("Plan step is missing required fields.");
+    const input = validateAgentToolInput(step.tool, step.input);
     return {
       id: index + 1, title, description, tool: step.tool, input,
-      requiresApproval: step.tool === "memory.save", status: "pending"
+      requiresApproval: isAgentToolApprovalRequired(step.tool), status: "pending"
     };
   });
   return { steps, maxSteps: maxAgentSteps };
@@ -485,24 +472,6 @@ async function appendTaskEvent(client, taskId, eventType, payload = {}) {
     "INSERT INTO agent_task_events (task_id,event_type,payload) VALUES ($1,$2,$3::jsonb)",
     [taskId, eventType, JSON.stringify(payload)]
   );
-}
-async function executeAgentTool(client, userId, step) {
-  if (step.tool === "memory.search") {
-    const found = await client.query(
-      "SELECT id,category,content FROM user_memories WHERE user_id=$1 AND content ILIKE $2 ORDER BY updated_at DESC LIMIT 5",
-      [userId, `%${step.input.query}%`]
-    );
-    return { memories: found.rows };
-  }
-  if (step.tool === "memory.save") {
-    const saved = await client.query(
-      "INSERT INTO user_memories (user_id,category,content) VALUES ($1,$2,$3) RETURNING id,category,content",
-      [userId, step.input.category, step.input.content]
-    );
-    return { saved: saved.rows[0] };
-  }
-  if (step.tool === "response.compose") return { text: step.input.text };
-  throw new Error("Tool permission denied.");
 }
 async function recoverRunningAgentTasks() {
   if (!pool) return 0;
@@ -567,7 +536,7 @@ async function runAgentTask(taskId, userId) {
           return;
         }
         const step = plan.steps[stepIndex];
-        const result = await executeAgentTool(client, userId, step);
+        const result = await runRegisteredAgentTool(client, userId, step.tool, step.input);
         step.status = "completed";
         step.result = result;
         plan.steps[stepIndex] = step;
@@ -718,9 +687,9 @@ app.post("/api/agent/tasks/:id/plan", noStore, sameOriginOnly, dbRequired, requi
       "NEXUS_AGENT_PLAN_JSON",
       "Create a safe, short execution plan for the user's request.",
       "Return ONLY JSON with this shape: {\"steps\":[{\"title\":string,\"description\":string,\"tool\":string,\"input\":object}]}",
-      "Allowed tools ONLY: memory.search with input {query:string}; memory.save with input {category:'note'|'preference'|'project'|'personal',content:string}; response.compose with input {text:string}.",
-      "Never propose shell, browser, network, code execution, purchases, messages, calls, account changes, or tools not in this allowlist.",
-      "Use 1 to 5 steps. Use memory.search only when relevant. memory.save is a write and will require explicit user approval. Always include one response.compose step as the final step.",
+      "Available tools:\\n" + getAgentToolPrompt(),
+      "Never propose shell, browser, arbitrary network access, code execution, purchases, messages, calls, account changes, or tools not listed above.",
+      `Use 1 to ${maxAgentSteps} steps. Use tools only when relevant. Any tool marked as requiring approval must not run before explicit user approval. Always include one response.compose step as the final step.`,
       "User task: " + started.rows[0].prompt
     ].join("\n");
     const rawPlan = await callProvider(provider, credential.key, credential.model, planningPrompt, []);
