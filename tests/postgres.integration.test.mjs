@@ -174,6 +174,12 @@ if (!process.env.DATABASE_URL) {
       });
       assert.equal(select.status, 200);
       assert.equal((await select.json()).activeProvider, "openai");
+      const agentSeedMemory = await fetch(baseUrl + "/api/memory", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+        body: JSON.stringify({ category: "project", content: "Agent runtime seed memory for tool search." })
+      });
+      assert.equal(agentSeedMemory.status, 201);
 
       const originalFetch = globalThis.fetch;
       let capturedProviderRequest = null;
@@ -190,7 +196,7 @@ if (!process.env.DATABASE_URL) {
               content = JSON.stringify({ steps: [{ title: "Unsafe step", description: "Should be rejected.", tool: "shell.exec", input: { command: "id" } }] });
             } else {
               content = JSON.stringify({ steps: [
-                { title: "Search private memory", description: "Find relevant notes belonging to this user.", tool: "memory.search", input: { query: "Updated memory" } },
+                { title: "Search private memory", description: "Find relevant notes belonging to this user.", tool: "memory.search", input: { query: "Agent runtime seed" } },
                 { title: "Save an approved note", description: "Persist a note only after the user approves the plan.", tool: "memory.save", input: { category: "note", content: "Approved agent memory artifact." } },
                 { title: "Summarize the result", description: "Return a concise completion summary.", tool: "response.compose", input: { text: "Agent finished after approval." } }
               ] });
