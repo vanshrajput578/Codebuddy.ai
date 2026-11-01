@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const WORKSPACE = "/workspace";
 const MAX_INPUT_BYTES = 1_500_000;
@@ -160,7 +161,8 @@ async function runCommand(command, timeoutMs) {
       LC_ALL: "C.UTF-8"
     },
     stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true
+    windowsHide: true,
+    detached: process.platform !== "win32"
   });
   const append = (current, chunk, currentBytes) => {
     const bytes = Buffer.from(chunk);
@@ -178,7 +180,7 @@ async function runCommand(command, timeoutMs) {
   });
   const timer = setTimeout(() => {
     timedOut = true;
-    child.kill("SIGKILL");
+    try { if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch { child.kill("SIGKILL"); }
   }, timeoutMs);
   const exitCode = await new Promise((resolve, reject) => {
     child.once("error", reject);
