@@ -134,6 +134,27 @@ if (!process.env.DATABASE_URL) {
       assert.equal(foreignWorkspaceList.status, 404, "workspace files must remain private to the task owner");
       const foreignWorkspaceDownload = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files/${workspaceListBody.files[0].id}`, { headers: { cookie: second.cookie } });
       assert.equal(foreignWorkspaceDownload.status, 404);
+      const firstFilesLibrary = await fetch(baseUrl + "/api/files", { headers: { cookie: first.cookie } });
+      assert.equal((await firstFilesLibrary.json()).files.length, 1);
+      const secondFilesLibrary = await fetch(baseUrl + "/api/files", { headers: { cookie: second.cookie } });
+      assert.equal((await secondFilesLibrary.json()).files.length, 0);
+      const foreignWorkspaceDelete = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files/${workspaceListBody.files[0].id}`, {
+        method: "DELETE",
+        headers: { origin, cookie: second.cookie, "x-csrf-token": second.csrf }
+      });
+      assert.equal(foreignWorkspaceDelete.status, 404, "another user must not delete task files");
+      const workspaceDelete = await fetch(baseUrl + `/api/agent/tasks/${taskBody.task.id}/files/${workspaceListBody.files[0].id}`, {
+        method: "DELETE",
+        headers: { origin, cookie: first.cookie, "x-csrf-token": first.csrf }
+      });
+      assert.equal(workspaceDelete.status, 200);
+      const filesAfterDelete = await fetch(baseUrl + "/api/files", { headers: { cookie: first.cookie } });
+      assert.equal((await filesAfterDelete.json()).files.length, 0);
+      const workspaceEvents = await pool.query(
+        "SELECT event_type,payload FROM agent_task_events WHERE task_id=$1 ORDER BY created_at ASC",
+        [taskBody.task.id]
+      );
+      assert.ok(workspaceEvents.rows.some(event => event.event_type === "workspace.file_deleted"));
       const invalidWorkspaceUpload = await fetch(baseUrl + "/api/agent/tasks", {
         method: "POST",
         headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
