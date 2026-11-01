@@ -126,7 +126,6 @@ export function startAgentWorker({ pool, executeTask, workerId = randomUUID(), p
     workerId,
     stop: async () => {
       stopped = true;
-      if (timer) clearTimeout(timer);
       await done;
     }
   };
