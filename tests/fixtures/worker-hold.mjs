@@ -7,5 +7,6 @@ startAgentWorker({
   workerId: "hard-kill-worker",
   pollIntervalMs: 10,
   leaseMs: 5_000,
-  executeTask: async () => new Promise(() => {})
+  executeTask: async () => new Promise(() => {}),
+  onError: error => console.error("[worker-hold]", error?.stack || error)
 });
