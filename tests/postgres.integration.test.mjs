@@ -424,15 +424,17 @@ if (!process.env.DATABASE_URL) {
           if (child.exitCode !== null) break;
           await new Promise(resolve => setTimeout(resolve, 50));
         }
-        if (!childClaimed) {
+        if (!childClaimed && child.exitCode === null && child.signalCode === null) {
           const failedChildExit = new Promise(resolve => child.once("exit", resolve));
           child.kill("SIGKILL");
           await failedChildExit;
         }
-        assert.equal(childClaimed, true, "subprocess worker must claim the test task");
-        const childExit = new Promise(resolve => child.once("exit", resolve));
-        child.kill("SIGKILL");
-        await childExit;
+        assert.equal(childClaimed, true, "subprocess worker must claim the test task; exit=" + child.exitCode + " signal=" + child.signalCode);
+        if (child.exitCode === null && child.signalCode === null) {
+          const childExit = new Promise(resolve => child.once("exit", resolve));
+          child.kill("SIGKILL");
+          await childExit;
+        }
         await new Promise(resolve => setTimeout(resolve, 5_200));
         const reclaimedAfterKill = await claimNextAgentTask(pool, "post-crash-recovery-worker", 5_000);
         assert.equal(reclaimedAfterKill?.id, crashTask.rows[0].id, "another worker must reclaim the task after a hard process kill");
