@@ -481,30 +481,6 @@ async function appendTaskEvent(client, taskId, eventType, payload = {}) {
     [taskId, eventType, JSON.stringify(payload)]
   );
 }
-async function recoverRunningAgentTasks() {
-  if (!pool) return 0;
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const recovered = await client.query(
-      "UPDATE agent_tasks SET status='paused',updated_at=now() WHERE status='running' RETURNING id"
-    );
-    for (const row of recovered.rows) {
-      await appendTaskEvent(client, row.id, "task.recovered_paused", {
-        reason: "Server restarted; explicit resume required."
-      });
-    }
-    await client.query("COMMIT");
-    return recovered.rowCount;
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-
 const maxAgentReplans = 2;
 
 async function replanAgentTask(taskId, userId, leaseToken) {
@@ -1113,4 +1089,4 @@ app.use((err, _req, res, _next) => {
 if (process.env.NODE_ENV !== "test" && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   app.listen(port, () => console.log(`NEXUS API listening on port ${port}`));
 }
-export { app, pool, recoverRunningAgentTasks, runAgentTask };
+export { app, pool, runAgentTask };
