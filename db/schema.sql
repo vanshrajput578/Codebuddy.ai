@@ -76,10 +76,16 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   replan_count INTEGER NOT NULL DEFAULT 0 CONSTRAINT agent_tasks_replan_count_range CHECK (replan_count BETWEEN 0 AND 2),
   result TEXT,
   approved_at TIMESTAMPTZ,
+  lease_owner VARCHAR(120),
+  lease_token UUID,
+  lease_expires_at TIMESTAMPTZ,
+  worker_attempts INTEGER NOT NULL DEFAULT 0 CONSTRAINT agent_tasks_worker_attempts_range CHECK (worker_attempts BETWEEN 0 AND 3),
+  worker_last_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS agent_tasks_user_updated_idx ON agent_tasks(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS agent_tasks_worker_claim_idx ON agent_tasks(status, lease_expires_at, updated_at) WHERE status='running';
 
 CREATE TABLE IF NOT EXISTS agent_task_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

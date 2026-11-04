@@ -481,38 +481,14 @@ async function appendTaskEvent(client, taskId, eventType, payload = {}) {
     [taskId, eventType, JSON.stringify(payload)]
   );
 }
-async function recoverRunningAgentTasks() {
-  if (!pool) return 0;
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const recovered = await client.query(
-      "UPDATE agent_tasks SET status='paused',updated_at=now() WHERE status='running' RETURNING id"
-    );
-    for (const row of recovered.rows) {
-      await appendTaskEvent(client, row.id, "task.recovered_paused", {
-        reason: "Server restarted; explicit resume required."
-      });
-    }
-    await client.query("COMMIT");
-    return recovered.rowCount;
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-
 const maxAgentReplans = 2;
 
-async function replanAgentTask(taskId, userId) {
+async function replanAgentTask(taskId, userId, leaseToken) {
   const snapshot = await pool.query(
     `SELECT t.prompt,t.plan,t.current_step,t.replan_count,t.status,p.provider
      FROM agent_tasks t LEFT JOIN user_preferences p ON p.user_id=t.user_id
-     WHERE t.id=$1 AND t.user_id=$2`,
-    [taskId, userId]
+     WHERE t.id=$1 AND t.user_id=$2 AND t.lease_token=$3::uuid AND t.lease_expires_at>now()`,
+    [taskId, userId, leaseToken]
   );
   if (!snapshot.rowCount || snapshot.rows[0].status !== "running") {
     return { status: snapshot.rows[0]?.status || "missing" };
@@ -558,10 +534,10 @@ async function replanAgentTask(taskId, userId) {
   try {
     await client.query("BEGIN");
     const locked = await client.query(
-      "SELECT status,current_step,replan_count FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+      "SELECT status,current_step,replan_count,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
       [taskId, userId]
     );
-    if (!locked.rowCount || locked.rows[0].status !== "running" ||
+    if (!locked.rowCount || locked.rows[0].status !== "running" || locked.rows[0].lease_token !== leaseToken || new Date(locked.rows[0].lease_expires_at).getTime() <= Date.now() ||
         Number(locked.rows[0].current_step) !== completedCount ||
         Number(locked.rows[0].replan_count || 0) !== Number(task.replan_count || 0)) {
       await client.query("ROLLBACK");
@@ -592,24 +568,29 @@ async function replanAgentTask(taskId, userId) {
   }
 }
 
-async function runAgentTask(taskId, userId) {
+async function runAgentTask(taskId, userId, leaseToken, isLeaseLost = () => false) {
   if (activeAgentTasks.has(taskId)) return;
   activeAgentTasks.add(taskId);
   try {
     for (let iteration = 0; iteration <= maxAgentSteps; iteration += 1) {
+      if (isLeaseLost()) return;
       const client = await pool.connect();
       let clientReleased = false;
       try {
         await client.query("BEGIN");
         const locked = await client.query(
-          "SELECT id,status,plan,current_step,approved_at,replan_count FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
+          "SELECT id,status,plan,current_step,approved_at,replan_count,lease_token,lease_expires_at FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE",
           [taskId, userId]
         );
-        if (!locked.rowCount || locked.rows[0].status !== "running") {
+        if (!locked.rowCount || locked.rows[0].status !== "running" || locked.rows[0].lease_token !== leaseToken || new Date(locked.rows[0].lease_expires_at).getTime() <= Date.now()) {
           await client.query("COMMIT");
           return;
         }
         const task = locked.rows[0];
+        if (isLeaseLost()) {
+          await client.query("COMMIT");
+          return;
+        }
         if (!task.approved_at) {
           await client.query(
             "UPDATE agent_tasks SET status='failed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3",
@@ -648,7 +629,8 @@ async function runAgentTask(taskId, userId) {
         if (step.replanAfter) {
           client.release();
           clientReleased = true;
-          const replanned = await replanAgentTask(taskId, userId);
+          if (isLeaseLost()) return;
+          const replanned = await replanAgentTask(taskId, userId, leaseToken);
           if (replanned.status !== "running") return;
         }
         await new Promise(resolve => setTimeout(resolve, 30));
@@ -657,8 +639,8 @@ async function runAgentTask(taskId, userId) {
         const failure = await pool.connect();
         try {
           await failure.query("BEGIN");
-          const owned = await failure.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE", [taskId, userId]);
-          if (owned.rowCount && owned.rows[0].status === "running") {
+          const owned = await failure.query("SELECT status,lease_token FROM agent_tasks WHERE id=$1 AND user_id=$2 FOR UPDATE", [taskId, userId]);
+          if (owned.rowCount && owned.rows[0].status === "running" && owned.rows[0].lease_token === leaseToken) {
             await failure.query("UPDATE agent_tasks SET status='failed',result=$1,updated_at=now() WHERE id=$2 AND user_id=$3", ["Execution failed. Review the plan and try again.", taskId, userId]);
             await appendTaskEvent(failure, taskId, "task.failed", { reason: "A validated tool step failed." });
           }
@@ -675,8 +657,7 @@ async function runAgentTask(taskId, userId) {
     }
   } finally {
     activeAgentTasks.delete(taskId);
-    const current = await pool.query("SELECT status FROM agent_tasks WHERE id=$1 AND user_id=$2", [taskId, userId]).catch(() => ({ rows: [] }));
-    if (current.rows[0]?.status === "running") setImmediate(() => runAgentTask(taskId, userId).catch(() => {}));
+    
   }
 }
 
@@ -850,7 +831,7 @@ app.get("/api/agent/tasks/:id", noStore, dbRequired, requireAuth, async (req, re
   if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid task ID." });
   try {
     const task = await pool.query(
-      "SELECT id,title,prompt,status,plan,current_step,replan_count,result,approved_at,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
+      "SELECT id,title,prompt,status,plan,current_step,replan_count,result,approved_at,worker_attempts,created_at,updated_at FROM agent_tasks WHERE id=$1 AND user_id=$2",
       [req.params.id, req.auth.id]
     );
     if (!task.rowCount) return res.status(404).json({ error: "Task not found." });
@@ -880,7 +861,6 @@ app.post("/api/agent/tasks/:id/approve", noStore, sameOriginOnly, dbRequired, re
     }
     await appendTaskEvent(client, req.params.id, "task.approved", { actor: "user", status: "running" });
     await client.query("COMMIT");
-    setImmediate(() => runAgentTask(req.params.id, req.auth.id).catch(() => {}));
     return res.status(202).json({ task: updated.rows[0] });
   } catch {
     await client.query("ROLLBACK").catch(() => {});
@@ -956,7 +936,6 @@ app.post("/api/agent/tasks/:id/resume", noStore, sameOriginOnly, dbRequired, req
     }
     await appendTaskEvent(client, req.params.id, "task.resumed", { actor: "user" });
     await client.query("COMMIT");
-    setImmediate(() => runAgentTask(req.params.id, req.auth.id));
     return res.status(202).json({ task: updated.rows[0] });
   } catch {
     await client.query("ROLLBACK").catch(() => {});
@@ -1114,9 +1093,6 @@ app.use((err, _req, res, _next) => {
 });
 
 if (process.env.NODE_ENV !== "test" && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  app.listen(port, () => {
-    console.log(`NEXUS API listening on port ${port}`);
-    if (pool) recoverRunningAgentTasks().catch(() => {});
-  });
+  app.listen(port, () => console.log(`NEXUS API listening on port ${port}`));
 }
-export { app, pool, recoverRunningAgentTasks };
+export { app, pool, runAgentTask };
