@@ -21,7 +21,7 @@ Requirements: Node.js 20+ and PostgreSQL 14+.
 1. Create a PostgreSQL database and user.
 2. Copy `.env.example` to `.env`; keep this file private and untracked.
 3. Set `DATABASE_URL`, `APP_ORIGIN=http://localhost:4000`, and `CREDENTIAL_ENCRYPTION_KEY`. Generate a 32-byte key using `openssl rand -base64 32`.
-4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, and `006_agent_worker_leases.sql` in order.
+4. For a new database, apply `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql`. For an existing database, apply migrations `003_agent_runtime.sql`, `004_agent_step_limit.sql`, `005_agent_replanning.sql`, `006_agent_worker_leases.sql`, and `007_provider_usage.sql` in order.
 5. Install dependencies: `npm install`.
 6. Run checks: `npm run check && npm test`.
 7. Start the API: `npm run dev`.
@@ -64,10 +64,27 @@ This repository is not yet production-ready for public multi-user traffic. Befor
 - `GET/POST /api/agent/tasks`, `GET /api/agent/tasks/:id`: user-scoped task queue and event history.
 - `POST /api/agent/tasks/:id/plan`: generate and validate a plan of at most eight allowlisted steps; evidence-driven continuation is capped at two replanning rounds and eight total steps.
 - `POST /api/agent/tasks/:id/approve`, `/reject`, `/pause`, `/resume`, `/cancel`: explicit task lifecycle controls. Execution starts only after approval.
-- `POST /api/chat`: calls the selected provider and persists the conversation.
+- `POST /api/chat`: non-streaming compatibility endpoint; calls the selected provider and persists the conversation.
+- `POST /api/chat/stream`: authenticated same-origin SSE endpoint; streams deltas and persists completed conversations plus usage/error telemetry.
+- `GET /api/providers/usage`: authenticated last-30-day per-provider/model request, outcome, character-count and latency aggregates.
 
 See [Security Policy](SECURITY.md), [Security Implementation](docs/SECURITY-IMPLEMENTATION.md), [Architecture](docs/ARCHITECTURE.md) and [Roadmap](docs/ROADMAP.md).
 
 ## License
 
 No open-source license has been selected. Normal copyright applies.
+
+### Provider streaming and usage (Phase 3)
+
+- Apply `db/migrations/007_provider_usage.sql` to existing databases (fresh schema users should also apply this migration after the base schema).
+- Chat uses authenticated same-origin Server-Sent Events at `POST /api/chat/stream`; the web client renders deltas as they arrive.
+- Gemini, OpenAI, OpenRouter and Anthropic have provider-specific SSE adapters. Transient HTTP 408/429/5xx responses receive one bounded retry before any output is streamed; requests have a 60-second timeout and support client cancellation.
+- `GET /api/providers/usage` returns the authenticated user's last-30-day request counts, success/error counts, input/output character counts and average latency. Character counts are estimates, not billable token counts; provider-specific token accounting is not claimed.
+- Model capability metadata is exposed with `GET /api/providers` under `supported`. Model availability and limits can change at provider discretion. CI uses mocked provider responses by default; if all four GitHub Actions secrets (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`) are configured, the backend workflow also runs `npm run test:providers:live`. Optional model overrides can be set as repository Actions variables (`GEMINI_MODEL`, `OPENAI_MODEL`, `OPENROUTER_MODEL`, `ANTHROPIC_MODEL`).
+
+
+## Phase 3 verification status
+
+The Phase 3 implementation is in draft PR [#4](https://github.com/vanshrajput578/Codebuddy.ai/pull/4). The latest backend checks (including PostgreSQL integration and provider adapter tests) and secret scan pass on commit `3da4582`. CI uses mocked provider responses. Real streaming with valid credentials for Gemini, OpenAI, OpenRouter and Anthropic remains an explicit acceptance requirement and has not been claimed as verified.
+
+For local live verification, set the same four API-key environment variables in a trusted shell and run `npm run test:providers:live`. Never commit provider keys or paste them into chat.

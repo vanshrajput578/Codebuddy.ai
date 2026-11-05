@@ -37,6 +37,7 @@ if (!process.env.DATABASE_URL) {
     const stepLimitMigration = await readFile(new URL("../db/migrations/004_agent_step_limit.sql", import.meta.url), "utf8");
     const replanningMigration = await readFile(new URL("../db/migrations/005_agent_replanning.sql", import.meta.url), "utf8");
     const workerMigration = await readFile(new URL("../db/migrations/006_agent_worker_leases.sql", import.meta.url), "utf8");
+    const providerUsageMigration = await readFile(new URL("../db/migrations/007_provider_usage.sql", import.meta.url), "utf8");
     await pool.query(schema);
     await pool.query(migration);
     await pool.query(migration);
@@ -46,6 +47,8 @@ if (!process.env.DATABASE_URL) {
     await pool.query(replanningMigration);
     await pool.query(workerMigration);
     await pool.query(workerMigration);
+    await pool.query(providerUsageMigration);
+    await pool.query(providerUsageMigration);
     let worker = startAgentWorker({ pool, workerId: "integration-worker", pollIntervalMs: 10, leaseMs: 5_000, executeTask: (taskId, userId, leaseToken) => runAgentTask(taskId, userId, leaseToken), onError: error => console.error(error) });
     server = app.listen(43127, "127.0.0.1");
     await new Promise((resolve, reject) => {
@@ -255,6 +258,31 @@ if (!process.env.DATABASE_URL) {
         });
         assert.equal(secondChat.status, 200, await secondChat.text());
         assert.ok(capturedProviderRequest.body.messages.some(item => item.content.includes("blue comet.")), "chat history must be sent as provider context");
+        const originalStreamFetch = globalThis.fetch;
+        globalThis.fetch = async (input, options = {}) => {
+          if (String(input) === "https://api.openai.com/v1/chat/completions" && JSON.parse(options.body || "{}").stream === true) {
+            return new Response('data: {"choices":[{"delta":{"content":"Streamed "}}]}\r\n\r\ndata: {"choices":[{"delta":{"content":"answer"}}]}\r\n\r\ndata: [DONE]\r\n\r\n', { status: 200, headers: { "content-type": "text/event-stream" } });
+          }
+          return originalStreamFetch(input, options);
+        };
+        try {
+          const streamed = await originalFetch(baseUrl + "/api/chat/stream", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin, cookie: first.cookie, "x-csrf-token": first.csrf },
+            body: JSON.stringify({ message: "Test streaming chat", conversationId: chatConversationId })
+          });
+          const streamedText = await streamed.text();
+          assert.equal(streamed.status, 200, streamedText);
+          assert.match(streamedText, /event: delta/);
+          assert.match(streamedText, /Streamed /);
+          assert.match(streamedText, /event: done/);
+          const usage = await originalFetch(baseUrl + "/api/providers/usage", { headers: { cookie: first.cookie } });
+          assert.equal(usage.status, 200);
+          const usageBody = await usage.json();
+          assert.equal(usageBody.windowDays, 30);
+          assert.ok(usageBody.usage.some(item => item.provider === "openai" && item.requests >= 1));
+        } finally { globalThis.fetch = originalStreamFetch; }
+
 
         const agentCreate = await originalFetch(baseUrl + "/api/agent/tasks", {
           method: "POST",

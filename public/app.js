@@ -31,7 +31,7 @@ const providerKey=document.getElementById('providerKey');
 const providerError=document.getElementById('providerError');
 const providerSuccess=document.getElementById('providerSuccess');
 const providerList=document.getElementById('providerList');
-const providerDefaults={gemini:'gemini-2.5-flash',openrouter:'openai/gpt-4.1-mini',openai:'gpt-4.1-mini',anthropic:'claude-3-5-haiku-latest'};
+const providerDefaults={gemini:'gemini-3.8-flash',openrouter:'openai/gpt-6-luna',openai:'gpt-6-luna',anthropic:'claude-haiku-5-5'};
 let sending=false;
 let registering=false;
 let csrfToken=null;
@@ -335,31 +335,55 @@ async function sendMessage(text){
   const value=String(text||'').trim();
   if(!value||sending)return;
   addMessage(value,'user');
-  sending=true;
-  sendButton.disabled=true;
-  composerStatus.textContent='Connecting securely to NEXUS API…';
+  sending=true;sendButton.disabled=true;
+  composerStatus.textContent='Connecting to NEXUS streaming chat…';
+  const assistantNode=document.createElement('div');
+  assistantNode.className='message system';
+  assistantNode.textContent='';
+  messages.appendChild(assistantNode);
+  let received=false;
   try{
-    const response=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken||''},
+    const response=await fetch('/api/chat/stream',{
+      method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken||''},
       credentials:'same-origin',cache:'no-store',
       body:JSON.stringify({message:value,...(conversationId?{conversationId}:{})})
     });
-    const data=await response.json().catch(()=>({}));
     if(response.status===401){setUnauthenticated();throw new Error('Your session expired. Sign in again.');}
-    if(!response.ok)throw new Error(data.error||'Request failed. Check the API server.');
-    if(typeof data.answer!=='string')throw new Error('The server returned an invalid response.');
-    addMessage(data.answer,'system');
-    conversationId=data.conversationId||conversationId;
+    if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Streaming request failed.');}
+    if(!response.body)throw new Error('Streaming is not supported by this connection.');
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer='';
+    while(true){
+      const {value:chunk,done}=await reader.read();
+      buffer+=decoder.decode(chunk||new Uint8Array(),{stream:!done});
+      buffer=buffer.replace(/\r\n/g,'\n');
+      let boundary;
+      while((boundary=buffer.indexOf('\n\n'))>=0){
+        const frame=buffer.slice(0,boundary).replace(/\r/g,'');
+        buffer=buffer.slice(boundary+2);
+        const event=frame.split('\n').find(line=>line.startsWith('event:'))?.slice(6).trim();
+        const dataLine=frame.split('\n').find(line=>line.startsWith('data:'));
+        if(!dataLine)continue;
+        let data;try{data=JSON.parse(dataLine.slice(5).trim());}catch{continue;}
+        if(event==='delta'&&typeof data.text==='string'){
+          assistantNode.textContent+=data.text;received=true;
+          assistantNode.scrollIntoView({behavior:'smooth',block:'nearest'});
+        }else if(event==='done'){
+          conversationId=data.conversationId||conversationId;
+          composerStatus.textContent='Streaming complete · Saved to your account';
+        }else if(event==='error')throw new Error(data.error||'Provider stream failed.');
+      }
+      if(done)break;
+    }
+    if(!received)throw new Error('The provider returned an empty response.');
     loadConversations();
-    composerStatus.textContent='Connected · Saved to your account';
   }catch(error){
-    addMessage(error.message||'Unable to reach the NEXUS API. Confirm that the backend is running.','system');
-    composerStatus.textContent='Request failed · Check server';
+    if(!received)assistantNode.remove();
+    addMessage(error.message||'Unable to reach NEXUS streaming API.','system');
+    composerStatus.textContent='Request failed · Check provider/server';
   }finally{
-    sending=false;
-    sendButton.disabled=false;
-    promptInput.focus();
+    sending=false;sendButton.disabled=false;promptInput.focus();
   }
 }
 chatForm.addEventListener('submit',event=>{
