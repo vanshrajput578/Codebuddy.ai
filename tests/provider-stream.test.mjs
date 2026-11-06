@@ -91,16 +91,92 @@ test("stream adapter applies the registry default model when no model is configu
 
 test("stream adapter exposes sanitized provider diagnostics without leaking credentials", async () => {
   const originalFetch = globalThis.fetch;
-  const echoedCredential = "not-a-real-key";
+  // The credential that must never leak is the one actually sent, so the
+  // provider error must echo that exact key. Echoing an unrelated string
+  // cannot be redacted by any sanitizer and does not test the invariant.
+  const requestKey = "provider-test-key-123";
   globalThis.fetch = async () => new Response(JSON.stringify({
-    error: { message: `Rejected key ${echoedCredential} because the model is unavailable.`, type: "invalid_request_error" }
+    error: { message: `Rejected key ${requestKey} because the model is unavailable.`, type: "invalid_request_error" }
   }), { status: 400, headers: { "content-type": "application/json" } });
   try {
     await assert.rejects(async () => {
-      for await (const _chunk of streamProviderResponse("openai", "provider-test-key-123", "model-test", "hello")) {}
+      for await (const _chunk of streamProviderResponse("openai", requestKey, "model-test", "hello")) {}
     }, error => {
+      assert.match(error.message, /\[openai\]/);
       assert.match(error.message, /HTTP 400/);
-      assert.doesNotMatch(error.message, new RegExp(echoedCredential));
+      assert.doesNotMatch(error.message, new RegExp(requestKey));
+      return true;
+    });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("stream adapter retries a timed-out request once and recovers", async () => {
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("The operation was aborted due to timeout");
+      error.name = "TimeoutError";
+      throw error;
+    }
+    return new Response('data: {"candidates":[{"content":{"parts":[{"text":"Recovered"}]}}]}\n\ndata: [DONE]\n\n', {
+      status: 200, headers: { "content-type": "text/event-stream" }
+    });
+  };
+  try {
+    const chunks = [];
+    for await (const chunk of streamProviderResponse("gemini", "provider-test-key-123", "model-test", "hello")) chunks.push(chunk);
+    assert.deepEqual(chunks, ["Recovered"]);
+    assert.equal(attempts, 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("stream adapter reports a timeout with provider and model, without leaking the key", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const error = new Error("The operation was aborted due to timeout");
+    error.name = "TimeoutError";
+    throw error;
+  };
+  try {
+    await assert.rejects(async () => {
+      for await (const _chunk of streamProviderResponse("gemini", "provider-test-key-123", "model-test", "hello")) {}
+    }, error => {
+      assert.match(error.message, /\[gemini\]/);
+      assert.match(error.message, /timed out after 60s/);
+      assert.match(error.message, /model-test/);
+      assert.doesNotMatch(error.message, /provider-test-key-123/);
+      return true;
+    });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("stream adapter parses a Gemini JSON payload split across data lines", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('data: {"candidates":\ndata: [{"content":{"parts":[{"text":"Hello"}]}}]}\n\n', {
+    status: 200, headers: { "content-type": "text/event-stream" }
+  });
+  try {
+    const chunks = [];
+    for await (const chunk of streamProviderResponse("gemini", "provider-test-key-123", "model-test", "hello")) chunks.push(chunk);
+    assert.deepEqual(chunks, ["Hello"]);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("stream adapter classifies an insufficient-credits failure", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.", type: "invalid_request_error" }
+  }), { status: 400, headers: { "content-type": "application/json" } });
+  try {
+    await assert.rejects(async () => {
+      for await (const _chunk of streamProviderResponse("anthropic", "provider-test-key-123", "model-test", "hello")) {}
+    }, error => {
+      assert.match(error.message, /\[anthropic\]/);
+      assert.match(error.message, /HTTP 400/);
+      assert.match(error.message, /credit/i);
       return true;
     });
   } finally { globalThis.fetch = originalFetch; }

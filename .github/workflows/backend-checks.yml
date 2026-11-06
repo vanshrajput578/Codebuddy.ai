@@ -12,6 +12,11 @@ jobs:
   test:
     name: Node.js security regression tests
     runs-on: ubuntu-latest
+    # Worst case with per-attempt timeouts and one retry is about 3 minutes
+    # per provider, so four slow providers plus install/tests need headroom;
+    # 20 minutes bounds a hung provider instead of letting the job run for
+    # the runner default.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
