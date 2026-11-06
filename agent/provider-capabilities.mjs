@@ -17,7 +17,17 @@ export function listProviderCapabilities() {
 
 export function extractSseData(frame) {
   const lines = String(frame).split(/\r?\n/);
-  const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trim()).join("\n");
-  if (!data || data === "[DONE]") return null;
-  try { return JSON.parse(data); } catch { return null; }
+  const dataLines = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trim());
+  if (!dataLines.length) return null;
+  const data = dataLines.join("\n");
+  if (data === "[DONE]") return null;
+  try { return JSON.parse(data); } catch {}
+  // Per the SSE spec, a JSON payload may be split across several data:
+  // lines. The joined text is not valid JSON in that case, so try each
+  // line on its own before giving up and dropping the chunk. Gemini
+  // frames have been seen in this split form.
+  for (const line of dataLines) {
+    try { return JSON.parse(line); } catch {}
+  }
+  return null;
 }
